@@ -49,7 +49,7 @@ export function App() {
   return (
     <div
       className={`min-h-screen lg:h-screen lg:max-h-screen lg:overflow-hidden flex flex-col font-sans selection:bg-[#f0b90b] selection:text-black transition-colors ${
-        isDark ? 'bg-[#12161c] text-[#eaecef]' : 'bg-[#f7f9fa] text-[#1e2329]'
+        isDark ? 'bg-[#0e1118] text-[#d1d4dc]' : 'bg-[#f4f6f9] text-[#191b22]'
       }`}
     >
       {/* Top Pro Sticky Header */}
@@ -74,7 +74,7 @@ export function App() {
         {/* Mobile Tab Switcher (Visible only on mobile/tablet) */}
         <div
           className={`lg:hidden flex items-center p-1 rounded-xl border text-xs font-mono select-none mb-2 ${
-            isDark ? 'bg-[#181a20] border-[#2b313a]' : 'bg-white border-[#eaecef] shadow-sm'
+            isDark ? 'bg-[#131722] border-[#2a2e39]' : 'bg-white border-[#dbe0e7] shadow-sm'
           }`}
         >
           <button
@@ -83,7 +83,7 @@ export function App() {
               mobileTab === 'chart'
                 ? 'bg-[#f0b90b] text-black shadow font-black'
                 : isDark
-                ? 'text-[#848e9c]'
+                ? 'text-[#787b86]'
                 : 'text-slate-600'
             }`}
           >
@@ -96,7 +96,7 @@ export function App() {
               mobileTab === 'book'
                 ? 'bg-[#f0b90b] text-black shadow font-black'
                 : isDark
-                ? 'text-[#848e9c]'
+                ? 'text-[#787b86]'
                 : 'text-slate-600'
             }`}
           >
@@ -109,7 +109,7 @@ export function App() {
               mobileTab === 'trades'
                 ? 'bg-[#f0b90b] text-black shadow font-black'
                 : isDark
-                ? 'text-[#848e9c]'
+                ? 'text-[#787b86]'
                 : 'text-slate-600'
             }`}
           >
@@ -122,7 +122,7 @@ export function App() {
               mobileTab === 'twap'
                 ? 'bg-[#f0b90b] text-black shadow font-black'
                 : isDark
-                ? 'text-[#848e9c]'
+                ? 'text-[#787b86]'
                 : 'text-slate-600'
             }`}
           >
@@ -134,11 +134,11 @@ export function App() {
         {/* Dual Layout Grid (Desktop vs Mobile) */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 flex-1 min-h-0">
           
-          {/* LEFT / PRIMARY: Compact Odds + Binance Pro Chart */}
+          {/* LEFT / PRIMARY: Compact Odds + Eye-Comfort Chart */}
           <section className={`lg:col-span-8 xl:col-span-9 flex flex-col h-full min-h-0 space-y-2 ${
             mobileTab === 'chart' ? 'flex' : 'hidden lg:flex'
           }`}>
-            {/* Compact Odds Bar (Super Vibrant Glowing) */}
+            {/* Compact Odds Bar */}
             <CompactOddsBar
               upPrice={upPrice}
               downPrice={downPrice}
@@ -146,7 +146,7 @@ export function App() {
               theme={theme}
             />
 
-            {/* TradingView / Binance Pro Chart (Dynamic Full Height) */}
+            {/* TradingView / Eye-Comfort Chart (Dynamic Full Height) */}
             <div className="flex-1 min-h-0 h-full w-full flex flex-col">
               <ProTradingChart
                 data={activeCandles}

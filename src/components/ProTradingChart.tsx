@@ -95,17 +95,17 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
 
   const isDark = theme === 'dark';
 
-  // 1. Initialize Chart (Authentic Binance Pro Color Scheme)
+  // 1. Initialize Chart with Eye-Comfort TradingView Charcoal Theme
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
     const isSpot = chartMode === 'SPOT';
 
-    // Binance Pro Palette
-    const bg = isDark ? '#181a20' : '#ffffff';
-    const gridColor = isDark ? '#202630' : '#f0f3f6';
-    const textColor = isDark ? '#848e9c' : '#474d57';
-    const borderColor = isDark ? '#2b313a' : '#eaecef';
+    // Eye-Comfort Palette (Deep Charcoal Navy, Soft on Eyes, Zero Glare)
+    const bg = isDark ? '#131722' : '#ffffff';
+    const gridColor = isDark ? '#1e222d' : '#edf0f4';
+    const textColor = isDark ? '#d1d4dc' : '#474d57';
+    const borderColor = isDark ? '#2a2e39' : '#dbe0e7';
 
     const chart = createChart(chartContainerRef.current, {
       width: chartContainerRef.current.clientWidth,
@@ -123,16 +123,16 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
       crosshair: {
         mode: 0,
         vertLine: {
-          color: isDark ? '#5e6673' : '#b7bdc6',
+          color: isDark ? '#758696' : '#959dad',
           width: 1,
           style: 3,
-          labelBackgroundColor: isDark ? '#2b313a' : '#dcdfe6',
+          labelBackgroundColor: isDark ? '#2a2e39' : '#dcdfe6',
         },
         horzLine: {
-          color: isDark ? '#5e6673' : '#b7bdc6',
+          color: isDark ? '#758696' : '#959dad',
           width: 1,
           style: 3,
-          labelBackgroundColor: isDark ? '#2b313a' : '#dcdfe6',
+          labelBackgroundColor: isDark ? '#2a2e39' : '#dcdfe6',
         },
       },
       rightPriceScale: {
@@ -156,9 +156,9 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
       },
     });
 
-    // Add Volume Histogram Series (Binance Pro Green / Red Volume)
+    // Add Volume Histogram Series
     const volumeSeries = chart.addSeries(HistogramSeries, {
-      color: isDark ? '#2b313a' : '#cbd5e1',
+      color: isDark ? '#2a2e39' : '#cbd5e1',
       priceFormat: { type: 'volume' },
       priceScaleId: 'volume',
     });
@@ -170,45 +170,47 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
     });
     volumeSeriesRef.current = volumeSeries;
 
-    // Add Main Price Series (Authentic Binance Green #0ecb81 and Red #f6465d)
+    // Price Format configuration
+    const priceFormatConfig: any = isSpot
+      ? { type: 'price', precision: 2, minMove: 0.01 }
+      : {
+          type: 'custom',
+          formatter: (price: number) => `${(price * 100).toFixed(1)}¢`,
+        };
+
+    // Add Main Price Series (Calm Forest Green #089981 & Scarlet Red #f23645)
     if (chartStyle === 'area') {
       const areaSeries = chart.addSeries(AreaSeries, {
-        topColor: isSpot ? 'rgba(240, 185, 11, 0.35)' : 'rgba(14, 203, 129, 0.35)',
+        topColor: isSpot ? 'rgba(240, 185, 11, 0.3)' : 'rgba(8, 153, 129, 0.3)',
         bottomColor: 'rgba(240, 185, 11, 0.0)',
-        lineColor: isSpot ? '#f0b90b' : '#0ecb81',
+        lineColor: isSpot ? '#f0b90b' : '#089981',
         lineWidth: 2,
-        priceFormat: isSpot
-          ? { type: 'price', precision: 2, minMove: 0.01 }
-          : { type: 'price', precision: 3, minMove: 0.001 },
+        priceFormat: priceFormatConfig,
       });
       areaSeriesRef.current = areaSeries;
       candleSeriesRef.current = null;
     } else {
       const candleSeries = chart.addSeries(CandlestickSeries, {
-        upColor: '#0ecb81',
-        downColor: '#f6465d',
-        borderUpColor: '#0ecb81',
-        borderDownColor: '#f6465d',
-        wickUpColor: '#0ecb81',
-        wickDownColor: '#f6465d',
-        priceFormat: isSpot
-          ? { type: 'price', precision: 2, minMove: 0.01 }
-          : { type: 'price', precision: 3, minMove: 0.001 },
+        upColor: '#089981',
+        downColor: '#f23645',
+        borderUpColor: '#089981',
+        borderDownColor: '#f23645',
+        wickUpColor: '#089981',
+        wickDownColor: '#f23645',
+        priceFormat: priceFormatConfig,
       });
       candleSeriesRef.current = candleSeries;
       areaSeriesRef.current = null;
     }
 
-    // Add Chainlink TWAP Line Series (Smooth Purple Neon)
+    // Add Chainlink TWAP Line Series (Soft Lavender #a855f7)
     const twapSeries = chart.addSeries(LineSeries, {
-      color: '#9353d3',
+      color: '#a855f7',
       lineWidth: 2,
       lineStyle: 0,
       priceScaleId: 'right',
       title: 'TWAP',
-      priceFormat: isSpot
-        ? { type: 'price', precision: 2, minMove: 0.01 }
-        : { type: 'price', precision: 3, minMove: 0.001 },
+      priceFormat: priceFormatConfig,
     });
     twapSeriesRef.current = twapSeries;
 
@@ -310,13 +312,11 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
         }));
         candleSeriesRef.current.setData(formatted);
 
-        // ONLY fitContent on explicit user actions (asset/timeframe/mode change)
-        if (!isInitializedRef.current || timeframeChanged || assetChanged || modeChanged) {
+        if (data.length >= 2 && (!isInitializedRef.current || timeframeChanged || assetChanged || modeChanged)) {
           chartRef.current?.timeScale().fitContent();
         }
         isInitializedRef.current = true;
       } else {
-        // Continuous live bar update / append - smoothly keeps time scale moving forward
         const last = data[data.length - 1];
         candleSeriesRef.current.update({
           time: last.time as any,
@@ -336,7 +336,7 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
           value: d.close,
         }));
         areaSeriesRef.current.setData(formatted);
-        if (!isInitializedRef.current || timeframeChanged || assetChanged || modeChanged) {
+        if (data.length >= 2 && (!isInitializedRef.current || timeframeChanged || assetChanged || modeChanged)) {
           chartRef.current?.timeScale().fitContent();
         }
         isInitializedRef.current = true;
@@ -349,13 +349,13 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
       }
     }
 
-    // Update Volume Series (Binance Green / Red)
+    // Update Volume Series (Forest Green / Scarlet Red)
     if (volumeSeriesRef.current && showVolume) {
       if (mustFullReset) {
         const volFormatted = data.map((d) => ({
           time: d.time as any,
           value: d.volume,
-          color: d.close >= d.open ? 'rgba(14, 203, 129, 0.45)' : 'rgba(246, 70, 93, 0.45)',
+          color: d.close >= d.open ? 'rgba(8, 153, 129, 0.45)' : 'rgba(242, 54, 69, 0.45)',
         }));
         volumeSeriesRef.current.setData(volFormatted);
       } else {
@@ -363,7 +363,7 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
         volumeSeriesRef.current.update({
           time: last.time as any,
           value: last.volume,
-          color: last.close >= last.open ? 'rgba(14, 203, 129, 0.45)' : 'rgba(246, 70, 93, 0.45)',
+          color: last.close >= last.open ? 'rgba(8, 153, 129, 0.45)' : 'rgba(242, 54, 69, 0.45)',
         });
       }
     }
@@ -396,10 +396,10 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
         if (chartMode === 'SPOT' && strikePrice > 0) {
           strikeLineRef.current = targetSeries.createPriceLine({
             price: strikePrice,
-            color: '#f0b90b', // Binance Gold
+            color: '#f0b90b', // Warm Amber Gold
             lineWidth: 1,
             lineStyle: 2, // Dashed
-            axisLabelVisible: false, // Protected: DOES NOT OBSTRUCT LIVE CANDLE PRICE
+            axisLabelVisible: false, // DOES NOT OBSTRUCT LIVE CANDLE PRICE
             title: `STRIKE $${strikePrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}`,
           });
         } else if (chartMode === 'CONTRACT') {
@@ -409,7 +409,7 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
             lineWidth: 1,
             lineStyle: 2,
             axisLabelVisible: false,
-            title: `50¢ PARITAS`,
+            title: `PARITAS 50.0¢`,
           });
         }
       }
@@ -430,10 +430,10 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
 
         predictionLineRef.current = targetSeries.createPriceLine({
           price: predictedPrice,
-          color: '#38bdf8', // Cyan
+          color: '#38bdf8', // Calm Sky Blue
           lineWidth: 1,
           lineStyle: 3, // Dotted
-          axisLabelVisible: false, // Protected: DOES NOT OBSTRUCT LIVE CANDLE PRICE
+          axisLabelVisible: false, // DOES NOT OBSTRUCT LIVE CANDLE PRICE
           title: titleText,
         });
       }
@@ -466,26 +466,30 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
   const isUpFromOpen = activeCandle ? activeCandle.close >= activeCandle.open : true;
   const candleChange = activeCandle ? activeCandle.close - activeCandle.open : 0;
   const candleChangePct = activeCandle && activeCandle.open > 0 ? (candleChange / activeCandle.open) * 100 : 0;
-  const deltaFromStrike = activeCandle && strikePrice > 0 ? activeCandle.close - strikePrice : 0;
-  const isAboveStrike = deltaFromStrike >= 0;
+
+  // In KONTRAK mode, benchmark is 0.50 (Paritas), NOT spot strike price!
+  const isSpotMode = chartMode === 'SPOT';
+  const effectiveBenchmark = isSpotMode ? strikePrice : 0.50;
+  const deltaFromBenchmark = activeCandle && effectiveBenchmark > 0 ? activeCandle.close - effectiveBenchmark : 0;
+  const isAboveBenchmark = deltaFromBenchmark >= 0;
 
   return (
     <div
       ref={chartWrapperRef}
       className={`relative w-full h-full flex flex-col rounded-xl overflow-hidden shadow-2xl transition-colors ${
-        isDark ? 'bg-[#181a20] border border-[#2b313a]' : 'bg-white border border-[#eaecef]'
+        isDark ? 'bg-[#131722] border border-[#2a2e39]' : 'bg-white border border-[#dbe0e7]'
       } ${isFullscreen ? 'p-2' : ''}`}
     >
-      {/* Top Binance Pro Toolbar */}
+      {/* Top Binance Pro Toolbar (Eye-Comfort Theme) */}
       <div
         className={`flex flex-wrap items-center justify-between px-2.5 py-1.5 border-b gap-1.5 z-10 select-none flex-shrink-0 ${
-          isDark ? 'bg-[#181a20] border-[#2b313a]' : 'bg-[#fafafa] border-[#eaecef]'
+          isDark ? 'bg-[#131722] border-[#2a2e39]' : 'bg-[#fafafa] border-[#eaecef]'
         }`}
       >
-        {/* Left: Timeframe Switcher (Binance Style) */}
+        {/* Left: Timeframe Switcher */}
         <div
           className={`flex items-center space-x-1 p-0.5 rounded-lg border ${
-            isDark ? 'bg-[#1e2329] border-[#2b313a]' : 'bg-slate-100 border-slate-300'
+            isDark ? 'bg-[#1e222d] border-[#2a2e39]' : 'bg-slate-100 border-slate-300'
           }`}
         >
           {TIMEFRAMES.map((tf) => (
@@ -496,7 +500,7 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
                 timeframe === tf.id
                   ? 'bg-[#f0b90b] text-slate-950 font-black shadow-sm'
                   : isDark
-                  ? 'text-[#848e9c] hover:text-[#eaecef]'
+                  ? 'text-[#787b86] hover:text-[#d1d4dc]'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
@@ -505,12 +509,12 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
           ))}
         </div>
 
-        {/* Center: Mode & Style Switcher (Binance Pro) */}
+        {/* Center: Mode & Style Switcher */}
         <div className="flex items-center space-x-1.5">
           {/* Mode Switcher */}
           <div
             className={`flex items-center p-0.5 rounded-lg border text-xs font-mono ${
-              isDark ? 'bg-[#1e2329] border-[#2b313a]' : 'bg-slate-100 border-slate-300'
+              isDark ? 'bg-[#1e222d] border-[#2a2e39]' : 'bg-slate-100 border-slate-300'
             }`}
           >
             <button
@@ -519,7 +523,7 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
                 chartMode === 'SPOT'
                   ? 'bg-[#f0b90b] text-slate-950 shadow-sm'
                   : isDark
-                  ? 'text-[#848e9c] hover:text-white'
+                  ? 'text-[#787b86] hover:text-white'
                   : 'text-slate-600 hover:text-black'
               }`}
             >
@@ -529,9 +533,9 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
               onClick={() => setChartMode('CONTRACT')}
               className={`px-3 py-0.5 rounded transition-colors font-black ${
                 chartMode === 'CONTRACT'
-                  ? 'bg-[#0ecb81] text-slate-950 shadow-sm'
+                  ? 'bg-[#089981] text-white shadow-sm'
                   : isDark
-                  ? 'text-[#848e9c] hover:text-white'
+                  ? 'text-[#787b86] hover:text-white'
                   : 'text-slate-600 hover:text-black'
               }`}
             >
@@ -542,7 +546,7 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
           {/* Style Switcher */}
           <div
             className={`hidden sm:flex items-center p-0.5 rounded-lg border text-xs font-mono ${
-              isDark ? 'bg-[#1e2329] border-[#2b313a]' : 'bg-slate-100 border-slate-300'
+              isDark ? 'bg-[#1e222d] border-[#2a2e39]' : 'bg-slate-100 border-slate-300'
             }`}
           >
             <button
@@ -551,7 +555,7 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
                 chartStyle === 'candles'
                   ? 'bg-[#f0b90b] text-slate-950 font-bold'
                   : isDark
-                  ? 'text-[#848e9c] hover:text-white'
+                  ? 'text-[#787b86] hover:text-white'
                   : 'text-slate-600 hover:text-black'
               }`}
               title="Candlestick Chart"
@@ -564,7 +568,7 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
                 chartStyle === 'heikin-ashi'
                   ? 'bg-[#f0b90b] text-slate-950 font-bold'
                   : isDark
-                  ? 'text-[#848e9c] hover:text-white'
+                  ? 'text-[#787b86] hover:text-white'
                   : 'text-slate-600 hover:text-black'
               }`}
               title="Heikin Ashi Chart"
@@ -577,7 +581,7 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
                 chartStyle === 'area'
                   ? 'bg-[#f0b90b] text-slate-950 font-bold'
                   : isDark
-                  ? 'text-[#848e9c] hover:text-white'
+                  ? 'text-[#787b86] hover:text-white'
                   : 'text-slate-600 hover:text-black'
               }`}
               title="Area Line Chart"
@@ -596,7 +600,7 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
               showPrediction
                 ? 'bg-[#f0b90b]/20 text-[#f0b90b] border-[#f0b90b]/60 shadow-sm'
                 : isDark
-                ? 'bg-[#1e2329] border-[#2b313a] text-slate-500 hover:text-slate-300'
+                ? 'bg-[#1e222d] border-[#2a2e39] text-[#787b86] hover:text-[#d1d4dc]'
                 : 'bg-slate-100 border-slate-300 text-slate-500 hover:text-slate-800'
             }`}
             title="Garis Proyeksi 30 Detik (Kuning)"
@@ -611,9 +615,9 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
               onClick={() => setShowTwapLine(!showTwapLine)}
               className={`px-2 py-0.5 text-xs font-mono font-bold rounded border transition-colors ${
                 showTwapLine
-                  ? 'bg-[#9353d3]/20 border-[#9353d3]/60 text-[#b57bee]'
+                  ? 'bg-[#a855f7]/20 border-[#a855f7]/60 text-[#c084fc]'
                   : isDark
-                  ? 'bg-[#1e2329] border-[#2b313a] text-slate-500'
+                  ? 'bg-[#1e222d] border-[#2a2e39] text-[#787b86]'
                   : 'bg-slate-100 border-slate-300 text-slate-500'
               }`}
               title="Chainlink TWAP"
@@ -629,7 +633,7 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
               showStrike
                 ? 'bg-[#f0b90b]/20 border-[#f0b90b]/60 text-[#f0b90b]'
                 : isDark
-                ? 'bg-[#1e2329] border-[#2b313a] text-slate-500'
+                ? 'bg-[#1e222d] border-[#2a2e39] text-[#787b86]'
                 : 'bg-slate-100 border-slate-300 text-slate-500'
             }`}
             title="Strike Benchmark Line"
@@ -642,9 +646,9 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
             onClick={() => setShowVolume(!showVolume)}
             className={`hidden md:inline px-2 py-0.5 text-xs font-mono font-bold rounded border transition-colors ${
               showVolume
-                ? 'bg-[#2b313a] border-[#3e4652] text-slate-200'
+                ? 'bg-[#2a2e39] border-[#3e4652] text-slate-200'
                 : isDark
-                ? 'bg-[#1e2329] border-[#2b313a] text-slate-500'
+                ? 'bg-[#1e222d] border-[#2a2e39] text-[#787b86]'
                 : 'bg-slate-100 border-slate-300 text-slate-500'
             }`}
             title="Volume Histogram"
@@ -657,7 +661,7 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
             onClick={toggleFullscreen}
             className={`p-1 border rounded transition-colors ${
               isDark
-                ? 'bg-[#1e2329] hover:bg-[#2b313a] border-[#2b313a] text-slate-300'
+                ? 'bg-[#1e222d] hover:bg-[#2a2e39] border-[#2a2e39] text-[#d1d4dc]'
                 : 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
             }`}
             title="Layar Penuh"
@@ -667,62 +671,84 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
         </div>
       </div>
 
-      {/* Binance Pro Floating Header Bar (Clear, Non-Obtrusive OHLCV + Polymarket TWAP Context) */}
+      {/* Binance Pro Floating Header Bar (Eye-Comfort Colors) */}
       <div
         className={`px-3 py-1 border-b flex flex-wrap items-center justify-between text-[11px] font-mono gap-1.5 select-none flex-shrink-0 ${
-          isDark ? 'bg-[#181a20]/95 border-[#2b313a]' : 'bg-[#f7f9fa]/95 border-[#eaecef]'
+          isDark ? 'bg-[#131722]/95 border-[#2a2e39]' : 'bg-[#f7f9fa]/95 border-[#eaecef]'
         }`}
       >
         <div className="flex items-center space-x-2">
-          <span className={`font-black text-xs ${isDark ? 'text-white' : 'text-slate-900'}`}>
-            {assetName}/USDT {chartMode === 'SPOT' ? 'SPOT' : 'KONTRAK'}
+          <span className={`font-black text-xs ${isDark ? 'text-[#e1e4ea]' : 'text-slate-900'}`}>
+            {isSpotMode ? `${assetName}/USDT SPOT` : `${assetName}-UP KONTRAK`}
           </span>
-          <span className="text-[#848e9c]">•</span>
+          <span className="text-[#787b86]">•</span>
           <span className="text-[#f0b90b] font-extrabold uppercase">{timeframe}</span>
-          <span className="text-[#848e9c]">•</span>
-          <span className={`font-black text-xs ${isUpFromOpen ? 'text-[#0ecb81]' : 'text-[#f6465d]'}`}>
-            {chartMode === 'SPOT'
+          <span className="text-[#787b86]">•</span>
+          <span className={`font-black text-xs ${isUpFromOpen ? 'text-[#089981]' : 'text-[#f23645]'}`}>
+            {isSpotMode
               ? `$${lastPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
               : `${(lastPrice * 100).toFixed(1)}¢ ($${lastPrice.toFixed(3)})`}
           </span>
           {activeCandle && (
-            <span className={`text-[10px] font-extrabold ${isUpFromOpen ? 'text-[#0ecb81]' : 'text-[#f6465d]'}`}>
+            <span className={`text-[10px] font-extrabold ${isUpFromOpen ? 'text-[#089981]' : 'text-[#f23645]'}`}>
               ({candleChange >= 0 ? '+' : ''}{candleChangePct.toFixed(2)}%)
             </span>
           )}
         </div>
 
-        {/* Binance OHLC Values */}
+        {/* OHLC Values */}
         {activeCandle && (
-          <div className="hidden md:flex items-center space-x-2.5 text-[#848e9c] text-[10px]">
-            <span>O: <strong className={isDark ? 'text-slate-200' : 'text-slate-800'}>{activeCandle.open.toFixed(chartMode === 'SPOT' ? 2 : 3)}</strong></span>
-            <span>H: <strong className={isDark ? 'text-slate-200' : 'text-slate-800'}>{activeCandle.high.toFixed(chartMode === 'SPOT' ? 2 : 3)}</strong></span>
-            <span>L: <strong className={isDark ? 'text-slate-200' : 'text-slate-800'}>{activeCandle.low.toFixed(chartMode === 'SPOT' ? 2 : 3)}</strong></span>
-            <span>C: <strong className={isDark ? 'text-slate-200' : 'text-slate-800'}>{activeCandle.close.toFixed(chartMode === 'SPOT' ? 2 : 3)}</strong></span>
+          <div className="hidden md:flex items-center space-x-2.5 text-[#787b86] text-[10px]">
+            <span>O: <strong className={isDark ? 'text-[#d1d4dc]' : 'text-slate-800'}>
+              {isSpotMode ? activeCandle.open.toFixed(2) : `${(activeCandle.open * 100).toFixed(1)}¢`}
+            </strong></span>
+            <span>H: <strong className={isDark ? 'text-[#d1d4dc]' : 'text-slate-800'}>
+              {isSpotMode ? activeCandle.high.toFixed(2) : `${(activeCandle.high * 100).toFixed(1)}¢`}
+            </strong></span>
+            <span>L: <strong className={isDark ? 'text-[#d1d4dc]' : 'text-slate-800'}>
+              {isSpotMode ? activeCandle.low.toFixed(2) : `${(activeCandle.low * 100).toFixed(1)}¢`}
+            </strong></span>
+            <span>C: <strong className={isDark ? 'text-[#d1d4dc]' : 'text-slate-800'}>
+              {isSpotMode ? activeCandle.close.toFixed(2) : `${(activeCandle.close * 100).toFixed(1)}¢`}
+            </strong></span>
           </div>
         )}
 
-        {/* Polymarket Strike & TWAP readouts (Clear & High Contrast) */}
+        {/* Benchmark Reference (SPOT Strike or CONTRACT Paritas) */}
         <div className="flex items-center space-x-3">
-          {strikePrice > 0 && chartMode === 'SPOT' && (
-            <div className="flex items-center space-x-1">
-              <span className="text-[#848e9c]">STRIKE:</span>
-              <span className="font-bold text-[#f0b90b]">
-                ${strikePrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-              </span>
-              <span className={`text-[10px] font-black px-1 rounded ${
-                isAboveStrike ? 'bg-[#0ecb81]/20 text-[#0ecb81]' : 'bg-[#f6465d]/20 text-[#f6465d]'
-              }`}>
-                {deltaFromStrike >= 0 ? '+' : ''}{deltaFromStrike.toFixed(2)}
-              </span>
-            </div>
-          )}
+          {isSpotMode ? (
+            <>
+              {strikePrice > 0 && (
+                <div className="flex items-center space-x-1">
+                  <span className="text-[#787b86]">STRIKE:</span>
+                  <span className="font-bold text-[#f0b90b]">
+                    ${strikePrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </span>
+                  <span className={`text-[10px] font-black px-1 rounded ${
+                    isAboveBenchmark ? 'bg-[#089981]/20 text-[#089981]' : 'bg-[#f23645]/20 text-[#f23645]'
+                  }`}>
+                    {deltaFromBenchmark >= 0 ? '+' : ''}{deltaFromBenchmark.toFixed(2)}
+                  </span>
+                </div>
+              )}
 
-          {runningTwap !== undefined && runningTwap > 0 && chartMode === 'SPOT' && (
+              {runningTwap !== undefined && runningTwap > 0 && (
+                <div className="flex items-center space-x-1">
+                  <span className="text-[#c084fc] font-bold">TWAP:</span>
+                  <span className="font-bold text-[#c084fc]">
+                    ${runningTwap.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              )}
+            </>
+          ) : (
             <div className="flex items-center space-x-1">
-              <span className="text-[#b57bee] font-bold">TWAP:</span>
-              <span className="font-bold text-[#b57bee]">
-                ${runningTwap.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              <span className="text-[#787b86]">PARITAS:</span>
+              <span className="font-bold text-[#f0b90b]">50.0¢</span>
+              <span className={`text-[10px] font-black px-1 rounded ${
+                isAboveBenchmark ? 'bg-[#089981]/20 text-[#089981]' : 'bg-[#f23645]/20 text-[#f23645]'
+              }`}>
+                {deltaFromBenchmark >= 0 ? '+' : ''}{(deltaFromBenchmark * 100).toFixed(1)}¢
               </span>
             </div>
           )}

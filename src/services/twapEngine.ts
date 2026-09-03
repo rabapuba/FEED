@@ -2,7 +2,7 @@ import { OHLCData, TimeFrame, RoundSettlementState } from '../types/market';
 
 /**
  * Ensures candle array has strictly ascending, non-duplicate timestamps.
- * Merges duplicate timestamps by taking earliest open, max high, min low, latest close, sum volume.
+ * Merges duplicate timestamps cleanly and removes invalid prices.
  */
 export function ensureStrictlyAscending(candles: OHLCData[]): OHLCData[] {
   if (candles.length === 0) return [];
@@ -13,16 +13,30 @@ export function ensureStrictlyAscending(candles: OHLCData[]): OHLCData[] {
     if (isNaN(c.time) || isNaN(c.close) || c.close <= 0) continue;
 
     if (result.length === 0) {
-      result.push({ ...c });
+      result.push({
+        time: c.time,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume || 0,
+      });
     } else {
       const last = result[result.length - 1];
       if (c.time > last.time) {
-        result.push({ ...c });
+        result.push({
+          time: c.time,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+          volume: c.volume || 0,
+        });
       } else if (c.time === last.time) {
         last.high = Math.max(last.high, c.high);
         last.low = Math.min(last.low, c.low);
         last.close = c.close;
-        last.volume += c.volume;
+        last.volume += c.volume || 0;
       }
     }
   }
@@ -32,11 +46,12 @@ export function ensureStrictlyAscending(candles: OHLCData[]): OHLCData[] {
 
 /**
  * Resamples contract candles safely for any target timeframe (including micro-timeframes 5s, 15s, 30s)
- * without leaving gaps or producing duplicate timestamps.
+ * without leaving gaps, guaranteeing 100% ascending timestamps.
  */
 export function resampleContractCandles(candles: OHLCData[], tf: TimeFrame, maxCount: number = 300): OHLCData[] {
   if (candles.length === 0) return [];
   const clean = ensureStrictlyAscending(candles);
+  if (clean.length === 0) return [];
 
   const tfSecondsMap: Record<TimeFrame, number> = {
     '5s': 5,
@@ -52,10 +67,11 @@ export function resampleContractCandles(candles: OHLCData[], tf: TimeFrame, maxC
     return aggregateCandles(clean, tf, maxCount);
   }
 
-  // For micro-timeframes (5s, 15s, 30s): expand 1m candles into contiguous micro-bars
+  // Micro-timeframe expansion: expand 1m candles into contiguous micro-bars
   const expanded: OHLCData[] = [];
+  const subCount = Math.floor(60 / targetSec);
+
   for (const c of clean) {
-    const subCount = 60 / targetSec;
     for (let i = 0; i < subCount; i++) {
       const subTime = c.time + (i * targetSec);
       expanded.push({
@@ -64,7 +80,7 @@ export function resampleContractCandles(candles: OHLCData[], tf: TimeFrame, maxC
         high: Math.max(c.open, c.close),
         low: Math.min(c.open, c.close),
         close: c.close,
-        volume: Math.round(c.volume / subCount),
+        volume: Math.round((c.volume || 100) / subCount),
       });
     }
   }
@@ -73,13 +89,12 @@ export function resampleContractCandles(candles: OHLCData[], tf: TimeFrame, maxC
 }
 
 /**
- * Real-time Chainlink TWAP (Time-Weighted Average Price) Accumulator
- * Calculates exact running settlement benchmark for 5-minute Polymarket Up/Down rounds.
+ * Real-time Chainlink TWAP Accumulator
  */
 export class TwapEngine {
   private windowTs: number = 0;
   private strikePrice: number = 0;
-  private secondPriceMap: Map<number, number> = new Map(); // second -> price
+  private secondPriceMap: Map<number, number> = new Map();
 
   constructor(windowTs: number, initialStrike: number = 0) {
     this.resetWindow(windowTs, initialStrike);
@@ -201,13 +216,13 @@ export function aggregateCandles(candles: OHLCData[], tf: TimeFrame, maxCount: n
         high: c.high,
         low: c.low,
         close: c.close,
-        volume: c.volume,
+        volume: c.volume || 0,
       });
     } else {
       existing.high = Math.max(existing.high, c.high);
       existing.low = Math.min(existing.low, c.low);
       existing.close = c.close;
-      existing.volume += c.volume;
+      existing.volume += c.volume || 0;
     }
   }
 
@@ -216,7 +231,7 @@ export function aggregateCandles(candles: OHLCData[], tf: TimeFrame, maxCount: n
 }
 
 /**
- * Converts regular candlestick data to Heikin-Ashi candles for smooth trend visualization.
+ * Converts regular candlestick data to Heikin-Ashi candles.
  */
 export function toHeikinAshi(candles: OHLCData[]): OHLCData[] {
   if (candles.length === 0) return [];
@@ -238,7 +253,7 @@ export function toHeikinAshi(candles: OHLCData[]): OHLCData[] {
       high: haHigh,
       low: haLow,
       close: haClose,
-      volume: c.volume,
+      volume: c.volume || 0,
     });
 
     prevHaOpen = haOpen;

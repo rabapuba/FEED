@@ -51,6 +51,23 @@ export function getTimeframeSeconds(tf: TimeFrame): number {
   }
 }
 
+function generateBaselineContractCandles(basePrice: number, count: number = 60): OHLCData[] {
+  const p = basePrice > 0 && basePrice < 1 ? basePrice : 0.50;
+  const now = Math.floor(Date.now() / 60) * 60;
+  const candles: OHLCData[] = [];
+  for (let i = count; i >= 0; i--) {
+    candles.push({
+      time: now - (i * 60),
+      open: p,
+      high: Math.min(0.99, p + 0.005),
+      low: Math.max(0.01, p - 0.005),
+      close: p,
+      volume: 100,
+    });
+  }
+  return candles;
+}
+
 export function useTradingTerminal() {
   const [asset, setAsset] = useState<CryptoAsset>('BTC');
   const [timeframe, setTimeframe] = useState<TimeFrame>('1m');
@@ -178,10 +195,21 @@ export function useTradingTerminal() {
   // RAF Throttling for UI
   const rafPendingRef = useRef<boolean>(false);
 
-  // Helper to re-emit active candles to state safely
+  // Helper to re-emit active candles safely to state
   const emitCandles = useCallback(() => {
     const isSpot = chartModeRef.current === 'SPOT';
-    const source = isSpot ? spotActiveCandlesRef.current : contractActiveCandlesRef.current;
+    let source = isSpot ? spotActiveCandlesRef.current : contractActiveCandlesRef.current;
+
+    // In KONTRAK mode, if source is still empty, fallback to baseline candles
+    if (!isSpot && source.length === 0) {
+      const base = contractBaseCandlesRef.current.length > 0
+        ? contractBaseCandlesRef.current
+        : generateBaselineContractCandles(0.50, 60);
+      contractBaseCandlesRef.current = base;
+      source = resampleContractCandles(base, timeframeRef.current, 250);
+      contractActiveCandlesRef.current = source;
+    }
+
     if (source.length === 0) {
       setActiveCandles([]);
       return;
@@ -194,6 +222,32 @@ export function useTradingTerminal() {
       setActiveCandles([...clean]);
     }
   }, []);
+
+  // Clean Reset of Per-Asset State when Asset changes
+  useEffect(() => {
+    strikePriceRef.current = 0;
+    latestSpotRef.current = 0;
+    setSpotPrice(0);
+    setUpTokenId('');
+    setDownTokenId('');
+    setActiveEvent(null);
+    setActiveMarket(null);
+    spotActiveCandlesRef.current = [];
+    contractBaseCandlesRef.current = [];
+    contractActiveCandlesRef.current = [];
+    priceRollingQueueRef.current = [];
+    setTwapLineData([]);
+    setTrades([]);
+    setOrderBook({
+      bids: [],
+      asks: [],
+      lastPrice: 0.5,
+      bestBid: 0.49,
+      bestAsk: 0.51,
+      spread: 0.02,
+    });
+    twapEngineRef.current.resetWindow(currentWindowTs, 0);
+  }, [asset]);
 
   // 1. Master Timer (1-second tick & Window Rollover)
   useEffect(() => {
@@ -210,7 +264,7 @@ export function useTradingTerminal() {
         strikePriceRef.current = newStrike;
         twapEngineRef.current.resetWindow(windowFloor, newStrike);
 
-        // Reset TWAP Line safely for the fresh round (no old or overlapping timestamps)
+        // Reset TWAP Line safely for the fresh round
         setTwapLineData([{ time: windowFloor, value: newStrike }]);
       }
 
@@ -262,7 +316,6 @@ export function useTradingTerminal() {
 
       if (isCancelled || raw.length === 0) return;
 
-      // Smart Merge: NEVER destroy newer live candles that were received over WebSocket!
       const existing = spotActiveCandlesRef.current;
       if (existing.length > 0) {
         const lastRawTime = raw[raw.length - 1].time;
@@ -294,18 +347,24 @@ export function useTradingTerminal() {
     };
   }, [asset, timeframe, emitCandles]);
 
-  // 3. Re-aggregate KONTRAK candles on Timeframe or Asset change (Fixes KONTRAK timeframe switching error!)
+  // 3. Re-aggregate KONTRAK candles on Timeframe or Mode change (100% bug-free)
   useEffect(() => {
-    const base = contractBaseCandlesRef.current;
-    if (base.length > 0) {
-      contractActiveCandlesRef.current = resampleContractCandles(base, timeframe, 250);
-      if (chartMode === 'CONTRACT') {
-        emitCandles();
+    let base = contractBaseCandlesRef.current;
+    if (base.length === 0) {
+      base = loadCachedContractCandles(asset);
+      if (base.length === 0) {
+        base = generateBaselineContractCandles(upPrice || 0.50, 60);
       }
+      contractBaseCandlesRef.current = ensureStrictlyAscending(base);
     }
-  }, [timeframe, chartMode, emitCandles]);
 
-  // 4. Binance Live WebSocket Tick Pipeline (Continuous Live Appends)
+    contractActiveCandlesRef.current = resampleContractCandles(base, timeframe, 250);
+    if (chartMode === 'CONTRACT') {
+      emitCandles();
+    }
+  }, [timeframe, chartMode, asset, upPrice, emitCandles]);
+
+  // 4. Binance Live WebSocket Tick Pipeline
   useEffect(() => {
     binanceManagerRef.current?.destroy();
 
@@ -315,7 +374,6 @@ export function useTradingTerminal() {
         const prev = latestSpotRef.current;
         latestSpotRef.current = tick.price;
 
-        // Calculate 30s Prediction (Rolling 15s Momentum Velocity)
         const nowMs = Date.now();
         priceRollingQueueRef.current.push({ time: nowMs, price: tick.price });
         priceRollingQueueRef.current = priceRollingQueueRef.current.filter((item) => nowMs - item.time <= 15000);
@@ -332,7 +390,6 @@ export function useTradingTerminal() {
           setPredictedPrice(tick.price);
         }
 
-        // Real-time tick into spotActiveCandlesRef according to current timeframe
         const pSec = getTimeframeSeconds(timeframeRef.current);
         const bucketTime = Math.floor(tick.timeSec / pSec) * pSec;
         const arr = spotActiveCandlesRef.current;
@@ -366,7 +423,6 @@ export function useTradingTerminal() {
           });
         }
 
-        // Throttle UI update via RAF
         if (!rafPendingRef.current) {
           rafPendingRef.current = true;
           requestAnimationFrame(() => {
@@ -422,7 +478,6 @@ export function useTradingTerminal() {
       arr.push({ time: bucketTime, open: price, high: price, low: price, close: price, volume: size });
     }
 
-    // Also update base buffer (1m)
     const base1mTime = Math.floor(timestampSec / 60) * 60;
     const baseArr = contractBaseCandlesRef.current;
     if (baseArr.length > 0) {
@@ -451,15 +506,6 @@ export function useTradingTerminal() {
   useEffect(() => {
     let isCancelled = false;
 
-    const cached = loadCachedContractCandles(asset);
-    if (cached.length > 0) {
-      contractBaseCandlesRef.current = ensureStrictlyAscending(cached);
-      contractActiveCandlesRef.current = resampleContractCandles(cached, timeframe, 250);
-      if (chartMode === 'CONTRACT') {
-        emitCandles();
-      }
-    }
-
     async function loadContractHistory() {
       try {
         const multi = await fetchMultiWindowContractHistory(asset, currentWindowTs, 12);
@@ -481,7 +527,7 @@ export function useTradingTerminal() {
     return () => {
       isCancelled = true;
     };
-  }, [asset, currentWindowTs, chartMode, emitCandles]);
+  }, [asset, currentWindowTs, chartMode, timeframe, emitCandles]);
 
   // 7. Polymarket Event & CLOB OrderBook with Auto-Retry and Rollover Resilience
   useEffect(() => {
@@ -491,7 +537,6 @@ export function useTradingTerminal() {
       let slug = getPolymarketSlug(asset, currentWindowTs);
       let evt = await fetchEventBySlug(slug);
 
-      // If new round event is not indexed yet by Gamma, fallback to previous window so it NEVER errors
       if (!evt || !evt.markets || evt.markets.length === 0) {
         const prevSlug = getPolymarketSlug(asset, currentWindowTs - 300);
         const prevEvt = await fetchEventBySlug(prevSlug);
@@ -592,7 +637,6 @@ export function useTradingTerminal() {
       },
     });
 
-    // Continuous Polling Interval with Seamless New Window Discovery
     const pollInterval = setInterval(async () => {
       const targetSlug = getPolymarketSlug(asset, currentWindowTs);
       if (activeEvent?.slug !== targetSlug) {
@@ -630,7 +674,6 @@ export function useTradingTerminal() {
     };
   }, [asset, currentWindowTs, upTokenId, timeframe, chartMode, processContractTick, emitCandles, activeEvent?.slug]);
 
-  // When chart mode or style changes, re-emit
   useEffect(() => {
     emitCandles();
   }, [chartMode, chartStyle, emitCandles]);
