@@ -35,11 +35,16 @@ export function getPolymarketSlug(asset: CryptoAsset, windowTs: number): string 
 }
 
 /**
- * Fetches Polymarket Event by slug from Gamma API.
+ * Fetches Polymarket Event by slug from Gamma API with timeout and error handling.
  */
 export async function fetchEventBySlug(slug: string): Promise<PolymarketEvent | null> {
+  if (!slug) return null;
   try {
-    const res = await fetch(`${GAMMA_API_BASE}/events?slug=${slug}`);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const res = await fetch(`${GAMMA_API_BASE}/events?slug=${slug}`, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
     if (!res.ok) return null;
     const data = await res.json();
     if (Array.isArray(data) && data.length > 0) {
@@ -47,22 +52,26 @@ export async function fetchEventBySlug(slug: string): Promise<PolymarketEvent | 
     }
     return null;
   } catch (err) {
-    console.error(`[Polymarket API] Error fetching event for ${slug}:`, err);
     return null;
   }
 }
 
 /**
- * Fetches CLOB Midpoint price for a token.
+ * Fetches CLOB Midpoint price for a token safely.
  */
 export async function fetchClobMidpoint(tokenId: string): Promise<number | null> {
+  if (!tokenId || tokenId.trim() === '') return null;
   try {
-    const res = await fetch(`${CLOB_API_BASE}/midpoint?token_id=${tokenId}`);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    const res = await fetch(`${CLOB_API_BASE}/midpoint?token_id=${tokenId}`, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
     if (!res.ok) return null;
     const data = await res.json();
     if (data && data.mid) {
       const mid = parseFloat(data.mid);
-      if (!isNaN(mid) && mid > 0) return mid;
+      if (!isNaN(mid) && mid > 0 && mid < 1) return mid;
     }
     return null;
   } catch (err) {
@@ -71,11 +80,16 @@ export async function fetchClobMidpoint(tokenId: string): Promise<number | null>
 }
 
 /**
- * Fetches current CLOB order book snapshot.
+ * Fetches current CLOB order book snapshot safely.
  */
 export async function fetchOrderBook(tokenId: string): Promise<OrderBookState | null> {
+  if (!tokenId || tokenId.trim() === '') return null;
   try {
-    const res = await fetch(`${CLOB_API_BASE}/book?token_id=${tokenId}`);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    const res = await fetch(`${CLOB_API_BASE}/book?token_id=${tokenId}`, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
     if (!res.ok) return null;
     const data = await res.json();
 
@@ -84,12 +98,12 @@ export async function fetchOrderBook(tokenId: string): Promise<OrderBookState | 
 
     const bids = rawBids
       .map((b: any) => ({ price: parseFloat(b.price), size: parseFloat(b.size) }))
-      .filter((b: any) => b.price >= 0.001 && b.price <= 0.999)
+      .filter((b: any) => !isNaN(b.price) && b.price >= 0.001 && b.price <= 0.999)
       .sort((a: any, b: any) => b.price - a.price);
 
     const asks = rawAsks
       .map((a: any) => ({ price: parseFloat(a.price), size: parseFloat(a.size) }))
-      .filter((a: any) => a.price >= 0.001 && a.price <= 0.999)
+      .filter((a: any) => !isNaN(a.price) && a.price >= 0.001 && a.price <= 0.999)
       .sort((a: any, b: any) => a.price - b.price);
 
     const bestBid = bids[0]?.price || 0.5;
@@ -106,17 +120,21 @@ export async function fetchOrderBook(tokenId: string): Promise<OrderBookState | 
       spread,
     };
   } catch (err) {
-    console.error('[Polymarket API] Error fetching orderbook:', err);
     return null;
   }
 }
 
 /**
- * Fetches recent trades history for a market conditionId.
+ * Fetches recent trades history for a market conditionId safely.
  */
 export async function fetchTradesHistory(conditionId: string): Promise<TradeItem[]> {
+  if (!conditionId || conditionId.trim() === '') return [];
   try {
-    const res = await fetch(`${DATA_API_BASE}/trades?market=${conditionId}`);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const res = await fetch(`${DATA_API_BASE}/trades?market=${conditionId}`, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
     if (!res.ok) return [];
     const data = await res.json();
     if (!Array.isArray(data)) return [];
@@ -124,23 +142,23 @@ export async function fetchTradesHistory(conditionId: string): Promise<TradeItem
     return data.map((t: any, index: number) => ({
       id: `${t.transactionHash || t.timestamp}-${index}`,
       side: t.side === 'BUY' ? 'BUY' : 'SELL',
-      price: parseFloat(t.price),
-      size: parseFloat(t.size),
-      timestamp: t.timestamp,
+      price: parseFloat(t.price) || 0.5,
+      size: parseFloat(t.size) || 10,
+      timestamp: t.timestamp || Math.floor(Date.now() / 1000),
       outcome: t.outcome === 'Up' ? 'Up' : 'Down',
       transactionHash: t.transactionHash,
       pseudonym: t.pseudonym || t.name || 'Trader',
     }));
   } catch (err) {
-    console.error('[Polymarket API] Error fetching trades history:', err);
     return [];
   }
 }
 
 /**
- * Fetches historical price history from Polymarket CLOB and builds continuous candles.
+ * Fetches historical price history from Polymarket CLOB.
  */
 export async function fetchContractPricesHistory(tokenId: string, startTs: number, endTs: number): Promise<OHLCData[]> {
+  if (!tokenId || tokenId.trim() === '') return [];
   try {
     const url = `${CLOB_API_BASE}/prices-history?market=${tokenId}&startTs=${startTs}&endTs=${endTs}&fidelity=1`;
     const res = await fetch(url);
@@ -327,6 +345,7 @@ export class PolymarketClobWsManager {
   }
 
   public subscribeTokens(upToken: string, downToken: string) {
+    if (!upToken) return;
     this.upTokenId = upToken;
     this.downTokenId = downToken;
 
@@ -355,24 +374,22 @@ export class PolymarketClobWsManager {
           if (!item) return;
 
           if (item.asset_id === this.upTokenId) {
-            // Book updates
             if (item.bids || item.asks) {
               this.onBookCallback?.(item.bids || [], item.asks || []);
             }
 
-            // Price change ticks
             if (item.price_changes) {
               for (const pc of item.price_changes) {
                 const price = parseFloat(pc.price);
                 const size = parseFloat(pc.size || '10');
                 const side = pc.side === 'BUY' ? 'BUY' : 'SELL';
-                this.onTickCallback?.(item.asset_id, price, size, side);
+                if (!isNaN(price) && price > 0 && price < 1) {
+                  this.onTickCallback?.(item.asset_id, price, size, side);
+                }
               }
             }
           }
-        } catch (e) {
-          // parse error
-        }
+        } catch (e) {}
       };
 
       this.ws.onerror = () => {
@@ -381,12 +398,12 @@ export class PolymarketClobWsManager {
 
       this.ws.onclose = () => {
         this.onStatusCallback?.(false);
-        if (!this.isDestroyed) {
+        if (!this.isDestroyed && this.upTokenId) {
           this.reconnectTimer = setTimeout(() => this.connect(), 2500);
         }
       };
     } catch (err) {
-      if (!this.isDestroyed) {
+      if (!this.isDestroyed && this.upTokenId) {
         this.reconnectTimer = setTimeout(() => this.connect(), 2500);
       }
     }

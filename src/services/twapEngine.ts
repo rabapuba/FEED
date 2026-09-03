@@ -15,7 +15,7 @@ export class TwapEngine {
 
   public resetWindow(windowTs: number, strikePrice: number = 0) {
     this.windowTs = windowTs;
-    this.strikePrice = strikePrice;
+    this.strikePrice = strikePrice > 0 ? strikePrice : 0;
     this.secondPriceMap.clear();
   }
 
@@ -33,7 +33,7 @@ export class TwapEngine {
       const secondIndex = timestampSec - this.windowTs;
       this.secondPriceMap.set(secondIndex, price);
 
-      if (this.strikePrice === 0 && secondIndex === 0) {
+      if (this.strikePrice === 0) {
         this.strikePrice = price;
       }
     }
@@ -41,6 +41,7 @@ export class TwapEngine {
 
   /**
    * Calculates real-time running settlement statistics for the active round.
+   * Fully protected against period transition division-by-zero or NaN.
    */
   public computeRoundSettlement(currentPrice: number, nowSec: number): RoundSettlementState {
     const elapsedRaw = Math.max(0, nowSec - this.windowTs);
@@ -48,11 +49,13 @@ export class TwapEngine {
     const secondsLeft = Math.max(0, 300 - elapsed);
     const progressPct = Math.min(100, Math.max(0, (elapsed / 300) * 100));
 
+    const strike = this.strikePrice > 0 ? this.strikePrice : (currentPrice > 0 ? currentPrice : 1);
+
     // Calculate TWAP across elapsed seconds
-    let runningTwap = currentPrice;
+    let runningTwap = currentPrice > 0 ? currentPrice : strike;
     if (this.secondPriceMap.size > 0 && elapsed > 0) {
       let sumPrice = 0;
-      let lastKnown = this.strikePrice || currentPrice;
+      let lastKnown = strike;
 
       for (let s = 0; s <= elapsed; s++) {
         if (this.secondPriceMap.has(s)) {
@@ -62,11 +65,10 @@ export class TwapEngine {
       }
       runningTwap = sumPrice / (elapsed + 1);
     } else {
-      runningTwap = this.strikePrice > 0 ? this.strikePrice : currentPrice;
+      runningTwap = strike;
     }
 
-    const strike = this.strikePrice > 0 ? this.strikePrice : currentPrice;
-    const strikeDelta = currentPrice - strike;
+    const strikeDelta = currentPrice > 0 ? currentPrice - strike : 0;
     const strikeDeltaPct = strike > 0 ? (strikeDelta / strike) * 100 : 0;
 
     const twapDelta = runningTwap - strike;
@@ -75,12 +77,11 @@ export class TwapEngine {
     // Required price to flip result before window close
     let requiredPriceToFlip = strike;
     if (secondsLeft > 0 && elapsed > 0) {
-      // Total target sum = strike * 300
-      // Current accumulated = runningTwap * (elapsed + 1)
       const currentSum = runningTwap * (elapsed + 1);
       const remainingSec = Math.max(1, 300 - elapsed);
       const neededSum = (strike * 300) - currentSum;
-      requiredPriceToFlip = Math.max(0, neededSum / remainingSec);
+      const target = neededSum / remainingSec;
+      requiredPriceToFlip = isFinite(target) && !isNaN(target) ? Math.max(0, target) : strike;
     }
 
     const isUpWinning = runningTwap >= strike;
@@ -91,7 +92,7 @@ export class TwapEngine {
       currentWindowTs: this.windowTs,
       secondsLeft,
       strikePrice: strike,
-      currentPrice,
+      currentPrice: currentPrice > 0 ? currentPrice : strike,
       runningTwap,
       strikeDelta,
       strikeDeltaPct,
@@ -121,7 +122,7 @@ export function aggregateCandles(candles: OHLCData[], tf: TimeFrame, maxCount: n
     '15m': 900,
   };
 
-  const periodSec = tfSecondsMap[tf];
+  const periodSec = tfSecondsMap[tf] || 60;
   const bucketMap = new Map<number, OHLCData>();
 
   for (const c of candles) {

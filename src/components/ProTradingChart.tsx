@@ -68,11 +68,13 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
   const strikeLineRef = useRef<IPriceLine | null>(null);
   const predictionLineRef = useRef<IPriceLine | null>(null);
 
-  // State tracking refs for smart zero-flicker updating
+  // State tracking refs to prevent backwards jump or disappearing bars
   const prevTimeframeRef = useRef<TimeFrame>(timeframe);
   const prevModeRef = useRef<ChartMode>(chartMode);
   const prevStyleRef = useRef<ChartStyle>(chartStyle);
-  const prevDataLengthRef = useRef<number>(0);
+  const prevAssetRef = useRef<string>(assetName);
+  const prevFirstTimeRef = useRef<number>(0);
+  const prevLastTimeRef = useRef<number>(0);
   const isInitializedRef = useRef<boolean>(false);
 
   // Hover state for interactive legend
@@ -82,7 +84,6 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
   const [showStrike, setShowStrike] = useState<boolean>(true);
   const [showVolume, setShowVolume] = useState<boolean>(true);
 
-  // Timeframe buttons list
   const TIMEFRAMES: Array<{ id: TimeFrame; label: string }> = [
     { id: '5s', label: '5s' },
     { id: '15s', label: '15s' },
@@ -143,7 +144,7 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
         timeVisible: true,
         secondsVisible: timeframe === '5s' || timeframe === '15s' || timeframe === '30s',
         borderVisible: true,
-        rightOffset: 8,
+        rightOffset: 6,
         barSpacing: 8,
         minBarSpacing: 2,
       },
@@ -263,25 +264,37 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
     };
   }, [chartMode, chartStyle, theme, isDark]);
 
-  // 2. High-Performance Zero-Flicker Data Updating
+  // 2. High-Precision Continuous Data Updates (No Backwards Jumping, No Disappearing Bars)
   useEffect(() => {
     if (!data || data.length === 0) return;
 
     const modeChanged = prevModeRef.current !== chartMode;
     const timeframeChanged = prevTimeframeRef.current !== timeframe;
     const styleChanged = prevStyleRef.current !== chartStyle;
-    const lengthDiff = Math.abs(data.length - prevDataLengthRef.current);
+    const assetChanged = prevAssetRef.current !== assetName;
+
+    const firstTime = data[0].time;
+    const lastTime = data[data.length - 1].time;
+    const historyReset = firstTime !== prevFirstTimeRef.current;
+
+    const mustFullReset =
+      !isInitializedRef.current ||
+      modeChanged ||
+      timeframeChanged ||
+      styleChanged ||
+      assetChanged ||
+      historyReset;
 
     prevModeRef.current = chartMode;
     prevTimeframeRef.current = timeframe;
     prevStyleRef.current = chartStyle;
-    prevDataLengthRef.current = data.length;
-
-    const needsFullReset = !isInitializedRef.current || modeChanged || timeframeChanged || styleChanged || lengthDiff > 1;
+    prevAssetRef.current = assetName;
+    prevFirstTimeRef.current = firstTime;
+    prevLastTimeRef.current = lastTime;
 
     // Update Candles Series
     if (candleSeriesRef.current) {
-      if (needsFullReset) {
+      if (mustFullReset) {
         const formatted = data.map((d) => ({
           time: d.time as any,
           open: d.open,
@@ -290,9 +303,14 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
           close: d.close,
         }));
         candleSeriesRef.current.setData(formatted);
-        chartRef.current?.timeScale().fitContent();
+
+        // ONLY fitContent on explicit user actions (asset/timeframe/mode change)
+        if (!isInitializedRef.current || timeframeChanged || assetChanged || modeChanged) {
+          chartRef.current?.timeScale().fitContent();
+        }
         isInitializedRef.current = true;
       } else {
+        // Continuous live bar update / append - smoothly keeps time scale moving forward
         const last = data[data.length - 1];
         candleSeriesRef.current.update({
           time: last.time as any,
@@ -306,13 +324,15 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
 
     // Update Area Series
     if (areaSeriesRef.current) {
-      if (needsFullReset) {
+      if (mustFullReset) {
         const formatted = data.map((d) => ({
           time: d.time as any,
           value: d.close,
         }));
         areaSeriesRef.current.setData(formatted);
-        chartRef.current?.timeScale().fitContent();
+        if (!isInitializedRef.current || timeframeChanged || assetChanged || modeChanged) {
+          chartRef.current?.timeScale().fitContent();
+        }
         isInitializedRef.current = true;
       } else {
         const last = data[data.length - 1];
@@ -325,7 +345,7 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
 
     // Update Volume Series
     if (volumeSeriesRef.current && showVolume) {
-      if (needsFullReset) {
+      if (mustFullReset) {
         const volFormatted = data.map((d) => ({
           time: d.time as any,
           value: d.volume,
@@ -359,7 +379,7 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
 
     const targetSeries = candleSeriesRef.current || areaSeriesRef.current;
 
-    // Update Strike Price Horizontal Line
+    // Strike Price Line
     if (targetSeries) {
       if (strikeLineRef.current) {
         targetSeries.removePriceLine(strikeLineRef.current);
@@ -418,6 +438,7 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
     chartMode,
     timeframe,
     chartStyle,
+    assetName,
     strikePrice,
     showTwapLine,
     showStrike,
@@ -640,7 +661,7 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
         </div>
       </div>
 
-      {/* Floating Legend Bar (Compact & Sleek) */}
+      {/* Floating Legend Bar */}
       <div
         className={`px-2.5 py-1 border-b flex flex-wrap items-center justify-between text-[11px] font-mono gap-1.5 select-none flex-shrink-0 ${
           isDark ? 'bg-[#0a0e17]/95 border-[#141b2a]' : 'bg-slate-100/95 border-slate-200'
@@ -702,7 +723,7 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
         </div>
       </div>
 
-      {/* Chart Canvas Area - Automatically fits remaining space */}
+      {/* Chart Canvas Area */}
       <div ref={chartContainerRef} className="w-full flex-1 min-h-0" />
     </div>
   );

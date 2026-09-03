@@ -176,43 +176,7 @@ export function useTradingTerminal() {
   // RAF Throttling for UI
   const rafPendingRef = useRef<boolean>(false);
 
-  // 1. Master Timer (1-second tick & Window Rollover)
-  useEffect(() => {
-    const timerInterval = setInterval(() => {
-      const nowSec = Math.floor(Date.now() / 1000);
-      const windowFloor = Math.floor(nowSec / 300) * 300;
-
-      if (windowFloor !== currentWindowRef.current) {
-        currentWindowRef.current = windowFloor;
-        setCurrentWindowTs(windowFloor);
-        twapEngineRef.current.resetWindow(windowFloor, latestSpotRef.current);
-        strikePriceRef.current = latestSpotRef.current;
-      }
-
-      if (latestSpotRef.current > 0) {
-        twapEngineRef.current.recordPrice(latestSpotRef.current, nowSec);
-        const st = twapEngineRef.current.computeRoundSettlement(latestSpotRef.current, nowSec);
-        setSettlement(st);
-
-        if (nowSec >= windowFloor) {
-          setTwapLineData((prev) => {
-            const copy = [...prev];
-            const last = copy[copy.length - 1];
-            if (last && last.time === nowSec) {
-              copy[copy.length - 1] = { time: nowSec, value: st.runningTwap };
-              return copy;
-            }
-            copy.push({ time: nowSec, value: st.runningTwap });
-            return copy.slice(-300);
-          });
-        }
-      }
-    }, 1000);
-
-    return () => clearInterval(timerInterval);
-  }, []);
-
-  // Helper to re-emit active candles
+  // Helper to re-emit active candles to state
   const emitCandles = useCallback(() => {
     const isSpot = chartModeRef.current === 'SPOT';
     const source = isSpot ? spotActiveCandlesRef.current : contractActiveCandlesRef.current;
@@ -228,17 +192,60 @@ export function useTradingTerminal() {
     }
   }, []);
 
-  // 2. Load SPOT Candles whenever asset or timeframe changes
+  // 1. Master Timer (1-second tick & Window Rollover)
+  useEffect(() => {
+    const timerInterval = setInterval(() => {
+      const nowSec = Math.floor(Date.now() / 1000);
+      const windowFloor = Math.floor(nowSec / 300) * 300;
+
+      // Handle Period Rollover Safely (Zero Errors)
+      if (windowFloor !== currentWindowRef.current) {
+        currentWindowRef.current = windowFloor;
+        setCurrentWindowTs(windowFloor);
+
+        const newStrike = latestSpotRef.current > 0 ? latestSpotRef.current : strikePriceRef.current;
+        strikePriceRef.current = newStrike;
+        twapEngineRef.current.resetWindow(windowFloor, newStrike);
+
+        // Reset TWAP Line safely for the fresh round (no old or overlapping timestamps)
+        setTwapLineData([{ time: windowFloor, value: newStrike }]);
+      }
+
+      if (latestSpotRef.current > 0) {
+        twapEngineRef.current.recordPrice(latestSpotRef.current, nowSec);
+        const st = twapEngineRef.current.computeRoundSettlement(latestSpotRef.current, nowSec);
+        setSettlement(st);
+
+        if (nowSec >= windowFloor) {
+          setTwapLineData((prev) => {
+            const copy = [...prev];
+            const last = copy[copy.length - 1];
+            if (last && last.time === nowSec) {
+              copy[copy.length - 1] = { time: nowSec, value: st.runningTwap };
+              return copy;
+            } else if (!last || last.time < nowSec) {
+              copy.push({ time: nowSec, value: st.runningTwap });
+              return copy.slice(-300);
+            }
+            return copy;
+          });
+        }
+      }
+    }, 1000);
+
+    return () => clearInterval(timerInterval);
+  }, []);
+
+  // 2. Load SPOT Initial Candles on Asset or Timeframe Change
   useEffect(() => {
     let isCancelled = false;
 
     async function loadSpotKlines() {
-      const tf = timeframeRef.current;
-      const curAsset = assetRef.current;
+      const tf = timeframe;
+      const curAsset = asset;
 
       let raw: OHLCData[] = [];
       if (tf === '5s' || tf === '15s' || tf === '30s') {
-        // Fetch 300 1-second candles and aggregate to 5s, 15s, or 30s
         const raw1s = await fetchBinanceKlines(curAsset, '1s', 300);
         if (isCancelled) return;
         raw = aggregateCandles(raw1s, tf, 200);
@@ -252,15 +259,25 @@ export function useTradingTerminal() {
 
       if (isCancelled || raw.length === 0) return;
 
-      spotActiveCandlesRef.current = raw;
-      const lastCandle = raw[raw.length - 1];
+      // Smart Merge: NEVER destroy newer live candles that were received over WebSocket!
+      const existing = spotActiveCandlesRef.current;
+      if (existing.length > 0) {
+        const lastRawTime = raw[raw.length - 1].time;
+        const newerLive = existing.filter((c) => c.time > lastRawTime);
+        spotActiveCandlesRef.current = [...raw, ...newerLive].slice(-250);
+      } else {
+        spotActiveCandlesRef.current = raw;
+      }
+
+      const lastCandle = spotActiveCandlesRef.current[spotActiveCandlesRef.current.length - 1];
       latestSpotRef.current = lastCandle.close;
       setSpotPrice(lastCandle.close);
 
-      // Strike price detection
-      const startCandle = raw.find((c) => c.time === currentWindowRef.current) || lastCandle;
-      strikePriceRef.current = startCandle.open || startCandle.close;
-      twapEngineRef.current.setStrikePrice(strikePriceRef.current);
+      if (strikePriceRef.current === 0) {
+        const startCandle = raw.find((c) => c.time === currentWindowRef.current) || lastCandle;
+        strikePriceRef.current = startCandle.open || startCandle.close;
+        twapEngineRef.current.setStrikePrice(strikePriceRef.current);
+      }
 
       if (chartModeRef.current === 'SPOT') {
         emitCandles();
@@ -274,7 +291,7 @@ export function useTradingTerminal() {
     };
   }, [asset, timeframe, emitCandles]);
 
-  // 3. Binance Live WebSocket Tick Pipeline
+  // 3. Binance Live WebSocket Tick Pipeline (Continuous Live Appends)
   useEffect(() => {
     binanceManagerRef.current?.destroy();
 
@@ -402,7 +419,6 @@ export function useTradingTerminal() {
   useEffect(() => {
     let isCancelled = false;
 
-    // Load cached contract candles first
     const cached = loadCachedContractCandles(asset);
     if (cached.length > 0) {
       contractBaseCandlesRef.current = cached;
@@ -435,67 +451,66 @@ export function useTradingTerminal() {
     };
   }, [asset, currentWindowTs, timeframe, chartMode, emitCandles]);
 
-  // 6. Polymarket Event & CLOB OrderBook stream
+  // 6. Polymarket Event & CLOB OrderBook with Auto-Retry and Rollover Resilience
   useEffect(() => {
     let isCancelled = false;
 
     async function loadMarketAndBook() {
-      const slug = getPolymarketSlug(asset, currentWindowTs);
-      const evt = await fetchEventBySlug(slug);
-      if (isCancelled) return;
+      let slug = getPolymarketSlug(asset, currentWindowTs);
+      let evt = await fetchEventBySlug(slug);
 
-      if (evt && evt.markets && evt.markets.length > 0) {
-        setActiveEvent(evt);
-        const m = evt.markets[0];
-        setActiveMarket(m);
+      // If new round event is not indexed yet by Gamma, fallback to previous window so it NEVER errors
+      if (!evt || !evt.markets || evt.markets.length === 0) {
+        const prevSlug = getPolymarketSlug(asset, currentWindowTs - 300);
+        const prevEvt = await fetchEventBySlug(prevSlug);
+        if (prevEvt && prevEvt.markets && prevEvt.markets.length > 0) {
+          evt = prevEvt;
+        }
+      }
 
-        let tUp = '';
-        let tDown = '';
-        try {
-          const tokens = typeof m.clobTokenIds === 'string' ? JSON.parse(m.clobTokenIds) : m.clobTokenIds;
-          if (Array.isArray(tokens) && tokens.length >= 2) {
-            tUp = tokens[0];
-            tDown = tokens[1];
-          }
-        } catch (e) {}
+      if (isCancelled || !evt || !evt.markets || evt.markets.length === 0) return;
 
-        setUpTokenId(tUp);
-        setDownTokenId(tDown);
+      setActiveEvent(evt);
+      const m = evt.markets[0];
+      setActiveMarket(m);
 
-        if (tUp) {
-          const mid = await fetchClobMidpoint(tUp);
-          if (mid !== null && !isCancelled) {
-            processContractTick(mid, 10, Math.floor(Date.now() / 1000));
-          } else if (m.outcomePrices) {
-            try {
-              const p = typeof m.outcomePrices === 'string' ? JSON.parse(m.outcomePrices) : m.outcomePrices;
-              if (Array.isArray(p) && p.length >= 2) {
-                const p0 = parseFloat(p[0]);
-                processContractTick(p0, 10, Math.floor(Date.now() / 1000));
-              }
-            } catch (e) {}
-          }
+      let tUp = '';
+      let tDown = '';
+      try {
+        const tokens = typeof m.clobTokenIds === 'string' ? JSON.parse(m.clobTokenIds) : m.clobTokenIds;
+        if (Array.isArray(tokens) && tokens.length >= 2) {
+          tUp = tokens[0];
+          tDown = tokens[1];
+        }
+      } catch (e) {}
 
-          const book = await fetchOrderBook(tUp);
-          if (book && !isCancelled) setOrderBook(book);
+      setUpTokenId(tUp);
+      setDownTokenId(tDown);
 
-          const hist = await fetchContractPricesHistory(tUp, currentWindowTs - 600, currentWindowTs + 300);
-          if (!isCancelled && hist.length > 0) {
-            contractBaseCandlesRef.current = mergeCandles(contractBaseCandlesRef.current, hist, 300);
-            contractActiveCandlesRef.current = aggregateCandles(contractBaseCandlesRef.current, timeframe, 200);
-            if (chartMode === 'CONTRACT') {
-              emitCandles();
+      if (tUp) {
+        const mid = await fetchClobMidpoint(tUp);
+        if (mid !== null && !isCancelled) {
+          processContractTick(mid, 10, Math.floor(Date.now() / 1000));
+        } else if (m.outcomePrices) {
+          try {
+            const p = typeof m.outcomePrices === 'string' ? JSON.parse(m.outcomePrices) : m.outcomePrices;
+            if (Array.isArray(p) && p.length >= 2) {
+              const p0 = parseFloat(p[0]);
+              if (!isNaN(p0)) processContractTick(p0, 10, Math.floor(Date.now() / 1000));
             }
-          }
-
-          polyWsManagerRef.current?.subscribeTokens(tUp, tDown);
+          } catch (e) {}
         }
 
-        if (m.conditionId) {
-          const initialTrades = await fetchTradesHistory(m.conditionId);
-          if (!isCancelled && initialTrades.length > 0) {
-            setTrades(initialTrades);
-          }
+        const book = await fetchOrderBook(tUp);
+        if (book && !isCancelled) setOrderBook(book);
+
+        polyWsManagerRef.current?.subscribeTokens(tUp, tDown);
+      }
+
+      if (m.conditionId) {
+        const initialTrades = await fetchTradesHistory(m.conditionId);
+        if (!isCancelled && initialTrades.length > 0) {
+          setTrades(initialTrades);
         }
       }
     }
@@ -522,9 +537,11 @@ export function useTradingTerminal() {
       onBook: (rawBids, rawAsks) => {
         const bids = rawBids
           .map((b: any) => ({ price: parseFloat(b.price), size: parseFloat(b.size) }))
+          .filter((b: any) => !isNaN(b.price))
           .sort((a, b) => b.price - a.price);
         const asks = rawAsks
           .map((a: any) => ({ price: parseFloat(a.price), size: parseFloat(a.size) }))
+          .filter((a: any) => !isNaN(a.price))
           .sort((a, b) => a.price - b.price);
 
         const bestBid = bids[0]?.price || 0.5;
@@ -543,13 +560,34 @@ export function useTradingTerminal() {
       },
     });
 
+    // Continuous Polling Interval with Seamless New Window Discovery
     const pollInterval = setInterval(async () => {
-      if (!upTokenId) return;
-      const b = await fetchOrderBook(upTokenId);
-      if (b && !isCancelled) setOrderBook(b);
-      const mid = await fetchClobMidpoint(upTokenId);
-      if (mid !== null && !isCancelled) {
-        processContractTick(mid, 10, Math.floor(Date.now() / 1000));
+      // Check if the actual currentWindow has become available on Polymarket
+      const targetSlug = getPolymarketSlug(asset, currentWindowTs);
+      if (activeEvent?.slug !== targetSlug) {
+        const newEvt = await fetchEventBySlug(targetSlug);
+        if (newEvt && newEvt.markets && newEvt.markets.length > 0) {
+          setActiveEvent(newEvt);
+          const m = newEvt.markets[0];
+          setActiveMarket(m);
+          try {
+            const tokens = typeof m.clobTokenIds === 'string' ? JSON.parse(m.clobTokenIds) : m.clobTokenIds;
+            if (Array.isArray(tokens) && tokens.length >= 2) {
+              setUpTokenId(tokens[0]);
+              setDownTokenId(tokens[1]);
+              polyWsManagerRef.current?.subscribeTokens(tokens[0], tokens[1]);
+            }
+          } catch (e) {}
+        }
+      }
+
+      if (upTokenId) {
+        const b = await fetchOrderBook(upTokenId);
+        if (b && !isCancelled) setOrderBook(b);
+        const mid = await fetchClobMidpoint(upTokenId);
+        if (mid !== null && !isCancelled) {
+          processContractTick(mid, 10, Math.floor(Date.now() / 1000));
+        }
       }
     }, 1500);
 
@@ -559,7 +597,7 @@ export function useTradingTerminal() {
       polyWsManagerRef.current?.destroy();
       polyWsManagerRef.current = null;
     };
-  }, [asset, currentWindowTs, upTokenId, timeframe, chartMode, processContractTick, emitCandles]);
+  }, [asset, currentWindowTs, upTokenId, timeframe, chartMode, processContractTick, emitCandles, activeEvent?.slug]);
 
   // When chart mode or style changes, re-emit
   useEffect(() => {
