@@ -9,7 +9,7 @@ import {
   HistogramSeries,
   IPriceLine,
 } from 'lightweight-charts';
-import { OHLCData, TimeFrame, ChartMode, ChartStyle, ThemeMode } from '../types/market';
+import { OHLCData, TimeFrame, ChartMode, ChartStyle, ThemeMode, RoundSettlementState } from '../types/market';
 import {
   Maximize2,
   Minimize2,
@@ -17,6 +17,11 @@ import {
   Activity,
   Layers,
   Zap,
+  ArrowUpRight,
+  ArrowDownRight,
+  TrendingUp,
+  TrendingDown,
+  Volume2,
 } from 'lucide-react';
 
 interface ProTradingChartProps {
@@ -36,6 +41,9 @@ interface ProTradingChartProps {
   setShowPrediction: (sp: boolean) => void;
   predictedPrice: number;
   assetName: string;
+  upPrice: number;
+  downPrice: number;
+  settlement: RoundSettlementState;
 }
 
 export const ProTradingChart: React.FC<ProTradingChartProps> = ({
@@ -55,6 +63,9 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
   setShowPrediction,
   predictedPrice,
   assetName,
+  upPrice,
+  downPrice,
+  settlement,
 }) => {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartWrapperRef = useRef<HTMLDivElement>(null);
@@ -84,6 +95,61 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
   const [showStrike, setShowStrike] = useState<boolean>(true);
   const [showVolume, setShowVolume] = useState<boolean>(true);
 
+  // Manual Volume Scaling State (5% to 60% of chart height)
+  const [volScalePct, setVolScalePct] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('chart_vol_scale');
+      return saved ? parseInt(saved, 10) : 20;
+    } catch (e) {
+      return 20;
+    }
+  });
+
+  const updateVolScale = (newScale: number) => {
+    const clamped = Math.max(5, Math.min(60, newScale));
+    setVolScalePct(clamped);
+    try {
+      localStorage.setItem('chart_vol_scale', clamped.toString());
+    } catch (e) {}
+  };
+
+  // Real-time tick change flash tracking for UP/DOWN values
+  const validUpPrice = Math.max(0.01, Math.min(0.99, isNaN(upPrice) ? 0.50 : upPrice));
+  const validDownPrice = Math.max(0.01, Math.min(0.99, isNaN(downPrice) ? 0.50 : downPrice));
+  const upCents = (validUpPrice * 100).toFixed(1);
+  const downCents = (validDownPrice * 100).toFixed(1);
+  const upRoi = ((1 / validUpPrice) - 1) * 100;
+  const downRoi = ((1 / validDownPrice) - 1) * 100;
+
+  const [upFlash, setUpFlash] = useState<'up' | 'down' | null>(null);
+  const [downFlash, setDownFlash] = useState<'up' | 'down' | null>(null);
+  const prevUpRef = useRef<number>(validUpPrice);
+  const prevDownRef = useRef<number>(validDownPrice);
+
+  useEffect(() => {
+    if (Math.abs(prevUpRef.current - validUpPrice) >= 0.001) {
+      const dir = validUpPrice > prevUpRef.current ? 'up' : 'down';
+      prevUpRef.current = validUpPrice;
+      setUpFlash(dir);
+      const timer = setTimeout(() => setUpFlash(null), 700);
+      return () => clearTimeout(timer);
+    }
+  }, [validUpPrice]);
+
+  useEffect(() => {
+    if (Math.abs(prevDownRef.current - validDownPrice) >= 0.001) {
+      const dir = validDownPrice > prevDownRef.current ? 'up' : 'down';
+      prevDownRef.current = validDownPrice;
+      setDownFlash(dir);
+      const timer = setTimeout(() => setDownFlash(null), 700);
+      return () => clearTimeout(timer);
+    }
+  }, [validDownPrice]);
+
+  const upPct = Math.round(validUpPrice * 100);
+  const downPct = 100 - upPct;
+  const { isUpWinning } = settlement;
+
   const TIMEFRAMES: Array<{ id: TimeFrame; label: string }> = [
     { id: '5s', label: '5s' },
     { id: '15s', label: '15s' },
@@ -101,7 +167,6 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
 
     const isSpot = chartMode === 'SPOT';
 
-    // Eye-Comfort Palette (Deep Charcoal Navy, Soft on Eyes, Zero Glare)
     const bg = isDark ? '#131722' : '#ffffff';
     const gridColor = isDark ? '#1e222d' : '#edf0f4';
     const textColor = isDark ? '#d1d4dc' : '#474d57';
@@ -156,7 +221,8 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
       },
     });
 
-    // Add Volume Histogram Series
+    // Add Volume Histogram Series with dynamic manual scale
+    const topMargin = Math.max(0.4, 1 - (volScalePct / 100));
     const volumeSeries = chart.addSeries(HistogramSeries, {
       color: isDark ? '#2a2e39' : '#cbd5e1',
       priceFormat: { type: 'volume' },
@@ -164,7 +230,7 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
     });
     chart.priceScale('volume').applyOptions({
       scaleMargins: {
-        top: 0.82,
+        top: topMargin,
         bottom: 0,
       },
     });
@@ -203,7 +269,7 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
       areaSeriesRef.current = null;
     }
 
-    // Add Chainlink TWAP Line Series (Soft Lavender #a855f7)
+    // Add Chainlink TWAP Line Series
     const twapSeries = chart.addSeries(LineSeries, {
       color: '#a855f7',
       lineWidth: 2,
@@ -271,6 +337,19 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
       isInitializedRef.current = false;
     };
   }, [chartMode, chartStyle, theme, isDark]);
+
+  // Apply manual volume scale changes dynamically
+  useEffect(() => {
+    if (chartRef.current) {
+      const topMargin = Math.max(0.4, 1 - (volScalePct / 100));
+      chartRef.current.priceScale('volume').applyOptions({
+        scaleMargins: {
+          top: topMargin,
+          bottom: 0,
+        },
+      });
+    }
+  }, [volScalePct]);
 
   // 2. High-Precision Continuous Data Updates
   useEffect(() => {
@@ -349,7 +428,7 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
       }
     }
 
-    // Update Volume Series (Forest Green / Scarlet Red)
+    // Update Volume Series
     if (volumeSeriesRef.current && showVolume) {
       if (mustFullReset) {
         const volFormatted = data.map((d) => ({
@@ -385,7 +464,7 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
 
     const targetSeries = candleSeriesRef.current || areaSeriesRef.current;
 
-    // Strike Price Line (axisLabelVisible: false so it NEVER blocks the live candle price!)
+    // Strike Price Line (axisLabelVisible: false so it NEVER blocks live candle price)
     if (targetSeries) {
       if (strikeLineRef.current) {
         targetSeries.removePriceLine(strikeLineRef.current);
@@ -396,10 +475,10 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
         if (chartMode === 'SPOT' && strikePrice > 0) {
           strikeLineRef.current = targetSeries.createPriceLine({
             price: strikePrice,
-            color: '#f0b90b', // Warm Amber Gold
+            color: '#f0b90b',
             lineWidth: 1,
-            lineStyle: 2, // Dashed
-            axisLabelVisible: false, // DOES NOT OBSTRUCT LIVE CANDLE PRICE
+            lineStyle: 2,
+            axisLabelVisible: false,
             title: `STRIKE $${strikePrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}`,
           });
         } else if (chartMode === 'CONTRACT') {
@@ -415,7 +494,7 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
       }
     }
 
-    // 30s Prediction Line (axisLabelVisible: false so it NEVER blocks the live candle price!)
+    // 30s Prediction Line (axisLabelVisible: false so it NEVER blocks live candle price)
     if (targetSeries) {
       if (predictionLineRef.current) {
         targetSeries.removePriceLine(predictionLineRef.current);
@@ -430,10 +509,10 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
 
         predictionLineRef.current = targetSeries.createPriceLine({
           price: predictedPrice,
-          color: '#38bdf8', // Calm Sky Blue
+          color: '#38bdf8',
           lineWidth: 1,
-          lineStyle: 3, // Dotted
-          axisLabelVisible: false, // DOES NOT OBSTRUCT LIVE CANDLE PRICE
+          lineStyle: 3,
+          axisLabelVisible: false,
           title: titleText,
         });
       }
@@ -467,7 +546,6 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
   const candleChange = activeCandle ? activeCandle.close - activeCandle.open : 0;
   const candleChangePct = activeCandle && activeCandle.open > 0 ? (candleChange / activeCandle.open) * 100 : 0;
 
-  // In KONTRAK mode, benchmark is 0.50 (Paritas), NOT spot strike price!
   const isSpotMode = chartMode === 'SPOT';
   const effectiveBenchmark = isSpotMode ? strikePrice : 0.50;
   const deltaFromBenchmark = activeCandle && effectiveBenchmark > 0 ? activeCandle.close - effectiveBenchmark : 0;
@@ -480,7 +558,7 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
         isDark ? 'bg-[#131722] border border-[#2a2e39]' : 'bg-white border border-[#dbe0e7]'
       } ${isFullscreen ? 'p-2' : ''}`}
     >
-      {/* Top Binance Pro Toolbar (Eye-Comfort Theme) */}
+      {/* 1. TOP TOOLBAR: Timeframe, Mode, Style, Feature Toggles, Manual Volume Scale */}
       <div
         className={`flex flex-wrap items-center justify-between px-2.5 py-1.5 border-b gap-1.5 z-10 select-none flex-shrink-0 ${
           isDark ? 'bg-[#131722] border-[#2a2e39]' : 'bg-[#fafafa] border-[#eaecef]'
@@ -591,7 +669,7 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
           </div>
         </div>
 
-        {/* Right: Feature Toggles */}
+        {/* Right: Feature Toggles & Manual Volume Scale */}
         <div className="flex items-center space-x-1">
           {/* Proyeksi 30s Toggle */}
           <button
@@ -641,20 +719,50 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
             STRIKE
           </button>
 
-          {/* Volume Toggle */}
-          <button
-            onClick={() => setShowVolume(!showVolume)}
-            className={`hidden md:inline px-2 py-0.5 text-xs font-mono font-bold rounded border transition-colors ${
-              showVolume
-                ? 'bg-[#2a2e39] border-[#3e4652] text-slate-200'
-                : isDark
-                ? 'bg-[#1e222d] border-[#2a2e39] text-[#787b86]'
-                : 'bg-slate-100 border-slate-300 text-slate-500'
-            }`}
-            title="Volume Histogram"
-          >
-            VOL
-          </button>
+          {/* Volume Toggle & Manual Scaler (- / +) */}
+          <div className="flex items-center space-x-1">
+            <button
+              onClick={() => setShowVolume(!showVolume)}
+              className={`px-2 py-0.5 text-xs font-mono font-bold rounded border transition-colors ${
+                showVolume
+                  ? 'bg-[#2a2e39] border-[#3e4652] text-slate-200'
+                  : isDark
+                  ? 'bg-[#1e222d] border-[#2a2e39] text-[#787b86]'
+                  : 'bg-slate-100 border-slate-300 text-slate-500'
+              }`}
+              title="Toggle Volume Histogram"
+            >
+              VOL
+            </button>
+
+            {/* Manual Volume Scale Stepper Control */}
+            {showVolume && (
+              <div
+                className={`flex items-center space-x-0.5 px-1 py-0.5 rounded border text-[10px] font-mono ${
+                  isDark ? 'bg-[#1e222d] border-[#2a2e39]' : 'bg-slate-100 border-slate-300'
+                }`}
+                title="Skala Manual Tinggi Histogram Volume"
+              >
+                <button
+                  onClick={() => updateVolScale(volScalePct - 5)}
+                  className="px-1 text-[#787b86] hover:text-[#f0b90b] font-black hover:bg-[#2a2e39] rounded transition-colors"
+                  title="Perkecil Skala Volume (-5%)"
+                >
+                  -
+                </button>
+                <span className="text-[#f0b90b] font-bold px-0.5 min-w-[26px] text-center">
+                  {volScalePct}%
+                </span>
+                <button
+                  onClick={() => updateVolScale(volScalePct + 5)}
+                  className="px-1 text-[#787b86] hover:text-[#f0b90b] font-black hover:bg-[#2a2e39] rounded transition-colors"
+                  title="Perbesar Skala Volume (+5%)"
+                >
+                  +
+                </button>
+              </div>
+            )}
+          </div>
 
           {/* Fullscreen Button */}
           <button
@@ -671,7 +779,137 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
         </div>
       </div>
 
-      {/* Binance Pro Floating Header Bar (Eye-Comfort Colors) */}
+      {/* 2. FLOATING HUD DI DALAM CHART: KOTAK UP & DOWN DEKAT DENGAN PENCAHAYAAN (PERMANEN DI SEMUA KONDISI) */}
+      <div className="w-full px-2 pt-1.5 pb-1 flex justify-center z-20 flex-shrink-0">
+        <div
+          className={`w-full max-w-4xl rounded-xl border p-1.5 shadow-xl backdrop-blur-md transition-all ${
+            isDark
+              ? 'bg-[#131722]/90 border-[#2a2e39]'
+              : 'bg-white/95 border-[#dbe0e7]'
+          }`}
+        >
+          {/* Centered Arena: Nilai UP dan DOWN dirapatkan di tengah */}
+          <div className="grid grid-cols-2 gap-1.5 items-stretch">
+            
+            {/* UP CARD (Nilai dirapatkan ke sisi kanan / tengah) */}
+            <div
+              className={`relative overflow-hidden rounded-lg px-2.5 py-1.5 border transition-all duration-300 flex items-center justify-between ${
+                isUpWinning
+                  ? isDark
+                    ? 'bg-[radial-gradient(ellipse_at_right,_var(--tw-gradient-stops))] from-[#089981]/30 via-[#0d2b20] to-[#131722] border-[#089981] shadow-[0_0_20px_rgba(8,153,129,0.4)] ring-1 ring-[#089981]'
+                    : 'bg-emerald-50 border-[#089981] shadow-md ring-1 ring-[#089981]'
+                  : isDark
+                  ? 'bg-[#1e222d]/60 border-[#2a2e39]'
+                  : 'bg-white border-slate-200'
+              } ${upFlash ? 'scale-[1.01] brightness-125' : ''}`}
+            >
+              {/* Info Kiri */}
+              <div className="flex flex-col justify-center relative z-10">
+                <div className="flex items-center space-x-1">
+                  <div className="p-0.5 rounded bg-[#089981]/20 text-[#089981]">
+                    <ArrowUpRight className="w-3 h-3 font-black" />
+                  </div>
+                  <span className="text-[10px] font-mono font-black uppercase text-[#089981]">
+                    UP (NAIK)
+                  </span>
+                </div>
+                <div className="flex items-center space-x-1.5 text-[9px] font-mono text-[#787b86]">
+                  <span>ROI:</span>
+                  <span className="font-black text-[#089981]">+{upRoi.toFixed(0)}%</span>
+                  <span className="hidden sm:inline">(${validUpPrice.toFixed(3)})</span>
+                </div>
+              </div>
+
+              {/* Angka Jumbo UP di Kanan (Merapat ke Tengah) */}
+              <div className="flex items-center space-x-1.5 relative z-10 pl-2">
+                {isUpWinning && (
+                  <span className="hidden sm:flex items-center space-x-0.5 px-1.5 py-0.2 rounded-full text-[8px] font-mono font-black bg-[#089981] text-slate-950 uppercase tracking-wider animate-pulse shadow-[0_0_8px_#089981]">
+                    <TrendingUp className="w-2.5 h-2.5" />
+                    <span>LEAD</span>
+                  </span>
+                )}
+                <div
+                  className={`text-2xl sm:text-3xl font-mono font-black tracking-tight text-[#089981] transition-all duration-200 ${
+                    isUpWinning
+                      ? 'drop-shadow-[0_0_15px_rgba(8,153,129,0.9)]'
+                      : 'drop-shadow-[0_0_6px_rgba(8,153,129,0.4)]'
+                  } ${upFlash === 'up' ? 'text-[#00ff88] drop-shadow-[0_0_25px_#00ff88]' : ''}`}
+                >
+                  {upCents}¢
+                </div>
+              </div>
+            </div>
+
+            {/* DOWN CARD (Nilai dirapatkan ke sisi kiri / tengah) */}
+            <div
+              className={`relative overflow-hidden rounded-lg px-2.5 py-1.5 border transition-all duration-300 flex items-center justify-between ${
+                !isUpWinning
+                  ? isDark
+                    ? 'bg-[radial-gradient(ellipse_at_left,_var(--tw-gradient-stops))] from-[#f23645]/30 via-[#2e1219] to-[#131722] border-[#f23645] shadow-[0_0_20px_rgba(242,54,69,0.4)] ring-1 ring-[#f23645]'
+                    : 'bg-rose-50 border-[#f23645] shadow-md ring-1 ring-[#f23645]'
+                  : isDark
+                  ? 'bg-[#1e222d]/60 border-[#2a2e39]'
+                  : 'bg-white border-slate-200'
+              } ${downFlash ? 'scale-[1.01] brightness-125' : ''}`}
+            >
+              {/* Angka Jumbo DOWN di Kiri (Merapat ke Tengah) */}
+              <div className="flex items-center space-x-1.5 relative z-10 pr-2">
+                <div
+                  className={`text-2xl sm:text-3xl font-mono font-black tracking-tight text-[#f23645] transition-all duration-200 ${
+                    !isUpWinning
+                      ? 'drop-shadow-[0_0_15px_rgba(242,54,69,0.9)]'
+                      : 'drop-shadow-[0_0_6px_rgba(242,54,69,0.4)]'
+                  } ${downFlash === 'up' ? 'text-[#ff3b69] drop-shadow-[0_0_25px_#ff3b69]' : ''}`}
+                >
+                  {downCents}¢
+                </div>
+                {!isUpWinning && (
+                  <span className="hidden sm:flex items-center space-x-0.5 px-1.5 py-0.2 rounded-full text-[8px] font-mono font-black bg-[#f23645] text-white uppercase tracking-wider animate-pulse shadow-[0_0_8px_#f23645]">
+                    <TrendingDown className="w-2.5 h-2.5" />
+                    <span>LEAD</span>
+                  </span>
+                )}
+              </div>
+
+              {/* Info Kanan */}
+              <div className="flex flex-col justify-center items-end relative z-10">
+                <div className="flex items-center space-x-1">
+                  <span className="text-[10px] font-mono font-black uppercase text-[#f23645]">
+                    DOWN (TURUN)
+                  </span>
+                  <div className="p-0.5 rounded bg-[#f23645]/20 text-[#f23645]">
+                    <ArrowDownRight className="w-3 h-3 font-black" />
+                  </div>
+                </div>
+                <div className="flex items-center space-x-1.5 text-[9px] font-mono text-[#787b86]">
+                  <span className="hidden sm:inline">(${validDownPrice.toFixed(3)})</span>
+                  <span>ROI:</span>
+                  <span className="font-black text-[#f23645]">+{downRoi.toFixed(0)}%</span>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          {/* Bilah Laser Energi Duel */}
+          <div className="relative w-full h-1 rounded-full overflow-hidden flex bg-[#1e222d] mt-1 shadow-inner">
+            <div
+              className="h-full bg-gradient-to-r from-[#089981] to-[#00ff88] transition-all duration-300 shadow-[0_0_6px_#089981]"
+              style={{ width: `${upPct}%` }}
+            />
+            <div
+              className="h-full bg-gradient-to-l from-[#f23645] to-[#ff3b69] transition-all duration-300 shadow-[0_0_6px_#f23645]"
+              style={{ width: `${downPct}%` }}
+            />
+            <div
+              className="absolute top-0 bottom-0 w-1 bg-white shadow-[0_0_6px_#ffffff] transform -translate-x-1/2 transition-all duration-300"
+              style={{ left: `${upPct}%` }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* 3. FLOATING LEGENDA BILAH ATAS: OHLCV + Benchmark */}
       <div
         className={`px-3 py-1 border-b flex flex-wrap items-center justify-between text-[11px] font-mono gap-1.5 select-none flex-shrink-0 ${
           isDark ? 'bg-[#131722]/95 border-[#2a2e39]' : 'bg-[#f7f9fa]/95 border-[#eaecef]'
@@ -714,7 +952,7 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
           </div>
         )}
 
-        {/* Benchmark Reference (SPOT Strike or CONTRACT Paritas) */}
+        {/* Benchmark Reference */}
         <div className="flex items-center space-x-3">
           {isSpotMode ? (
             <>
@@ -755,7 +993,7 @@ export const ProTradingChart: React.FC<ProTradingChartProps> = ({
         </div>
       </div>
 
-      {/* Chart Canvas Area */}
+      {/* 4. CANVAS GRAFIK UTAMA */}
       <div ref={chartContainerRef} className="w-full flex-1 min-h-0" />
     </div>
   );

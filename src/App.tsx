@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useTradingTerminal } from './hooks/useTradingTerminal';
 import { ProHeader } from './components/ProHeader';
-import { CompactOddsBar } from './components/CompactOddsBar';
 import { ProTradingChart } from './components/ProTradingChart';
 import { ClobOrderBook } from './components/ClobOrderBook';
 import { LiveTradesTicker } from './components/LiveTradesTicker';
@@ -134,19 +133,10 @@ export function App() {
         {/* Dual Layout Grid (Desktop vs Mobile) */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 flex-1 min-h-0">
           
-          {/* LEFT / PRIMARY: Compact Odds + Eye-Comfort Chart */}
-          <section className={`lg:col-span-8 xl:col-span-9 flex flex-col h-full min-h-0 space-y-2 ${
+          {/* LEFT / PRIMARY: TradingView Chart with Integrated Top UP/DOWN HUD */}
+          <section className={`lg:col-span-8 xl:col-span-9 flex flex-col h-full min-h-0 ${
             mobileTab === 'chart' ? 'flex' : 'hidden lg:flex'
           }`}>
-            {/* Compact Odds Bar */}
-            <CompactOddsBar
-              upPrice={upPrice}
-              downPrice={downPrice}
-              settlement={settlement}
-              theme={theme}
-            />
-
-            {/* TradingView / Eye-Comfort Chart (Dynamic Full Height) */}
             <div className="flex-1 min-h-0 h-full w-full flex flex-col">
               <ProTradingChart
                 data={activeCandles}
@@ -165,6 +155,9 @@ export function App() {
                 setShowPrediction={setShowPrediction}
                 predictedPrice={predictedPrice}
                 assetName={asset}
+                upPrice={upPrice}
+                downPrice={downPrice}
+                settlement={settlement}
               />
             </div>
           </section>
