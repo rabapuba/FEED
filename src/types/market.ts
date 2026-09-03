@@ -6,6 +6,8 @@ export type ChartMode = 'SPOT' | 'CONTRACT';
 
 export type ChartStyle = 'candles' | 'area' | 'heikin-ashi';
 
+export type ThemeMode = 'dark' | 'light';
+
 export interface OHLCData {
   time: number; // Unix timestamp in seconds
   open: number;

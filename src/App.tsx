@@ -19,6 +19,11 @@ export function App() {
     setChartMode,
     chartStyle,
     setChartStyle,
+    theme,
+    toggleTheme,
+    showPrediction,
+    setShowPrediction,
+    predictedPrice,
     spotPrice,
     priceDirection,
     upPrice,
@@ -34,17 +39,20 @@ export function App() {
     activeMarket,
   } = useTradingTerminal();
 
-  // Mobile navigation tabs
+  // Mobile navigation tab state
   const [mobileTab, setMobileTab] = useState<'chart' | 'book' | 'trades' | 'twap'>('chart');
-  // Desktop secondary tab switcher
-  const [desktopTab, setDesktopTab] = useState<'all' | 'book' | 'trades'>('all');
 
   const slug = getPolymarketSlug(asset, currentWindowTs);
   const activeLastPrice = chartMode === 'SPOT' ? spotPrice : upPrice;
+  const isDark = theme === 'dark';
 
   return (
-    <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col font-sans selection:bg-cyan-500 selection:text-black">
-      {/* Top Pro Header */}
+    <div
+      className={`min-h-screen flex flex-col font-sans selection:bg-cyan-500 selection:text-black transition-colors ${
+        isDark ? 'bg-[#07090e] text-slate-100' : 'bg-[#f8fafc] text-slate-900'
+      }`}
+    >
+      {/* Top Pro Sticky Header */}
       <ProHeader
         asset={asset}
         setAsset={setAsset}
@@ -54,17 +62,29 @@ export function App() {
         latencyStats={latencyStats}
         upPrice={upPrice}
         downPrice={downPrice}
+        theme={theme}
+        toggleTheme={toggleTheme}
+        showPrediction={showPrediction}
+        setShowPrediction={setShowPrediction}
       />
 
-      {/* Main Terminal Grid */}
+      {/* Main Terminal Area */}
       <main className="flex-1 p-2 sm:p-3.5 max-w-[1920px] w-full mx-auto flex flex-col gap-2.5">
         
-        {/* Mobile Tab Switcher (Visible on small screens) */}
-        <div className="lg:hidden flex items-center bg-[#0d131f] p-1 rounded-xl border border-[#1a2337] text-xs font-mono">
+        {/* Mobile Tab Switcher (Visible only on mobile/tablet) */}
+        <div
+          className={`lg:hidden flex items-center p-1 rounded-xl border text-xs font-mono select-none ${
+            isDark ? 'bg-[#0d131f] border-[#1a2337]' : 'bg-white border-slate-200 shadow-sm'
+          }`}
+        >
           <button
             onClick={() => setMobileTab('chart')}
             className={`flex-1 py-1.5 rounded-lg flex items-center justify-center space-x-1 font-bold transition-all ${
-              mobileTab === 'chart' ? 'bg-cyan-500 text-black shadow' : 'text-slate-400'
+              mobileTab === 'chart'
+                ? 'bg-cyan-500 text-black shadow font-black'
+                : isDark
+                ? 'text-slate-400'
+                : 'text-slate-600'
             }`}
           >
             <BarChart2 className="w-3.5 h-3.5" />
@@ -73,7 +93,11 @@ export function App() {
           <button
             onClick={() => setMobileTab('book')}
             className={`flex-1 py-1.5 rounded-lg flex items-center justify-center space-x-1 font-bold transition-all ${
-              mobileTab === 'book' ? 'bg-cyan-500 text-black shadow' : 'text-slate-400'
+              mobileTab === 'book'
+                ? 'bg-cyan-500 text-black shadow font-black'
+                : isDark
+                ? 'text-slate-400'
+                : 'text-slate-600'
             }`}
           >
             <BookOpen className="w-3.5 h-3.5" />
@@ -82,7 +106,11 @@ export function App() {
           <button
             onClick={() => setMobileTab('trades')}
             className={`flex-1 py-1.5 rounded-lg flex items-center justify-center space-x-1 font-bold transition-all ${
-              mobileTab === 'trades' ? 'bg-cyan-500 text-black shadow' : 'text-slate-400'
+              mobileTab === 'trades'
+                ? 'bg-cyan-500 text-black shadow font-black'
+                : isDark
+                ? 'text-slate-400'
+                : 'text-slate-600'
             }`}
           >
             <Activity className="w-3.5 h-3.5" />
@@ -91,7 +119,11 @@ export function App() {
           <button
             onClick={() => setMobileTab('twap')}
             className={`flex-1 py-1.5 rounded-lg flex items-center justify-center space-x-1 font-bold transition-all ${
-              mobileTab === 'twap' ? 'bg-cyan-500 text-black shadow' : 'text-slate-400'
+              mobileTab === 'twap'
+                ? 'bg-cyan-500 text-black shadow font-black'
+                : isDark
+                ? 'text-slate-400'
+                : 'text-slate-600'
             }`}
           >
             <ShieldCheck className="w-3.5 h-3.5" />
@@ -99,10 +131,10 @@ export function App() {
           </button>
         </div>
 
-        {/* Desktop Grid Layout */}
+        {/* Dual Layout Grid (Desktop vs Mobile) */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 flex-1">
           
-          {/* LEFT / PRIMARY SECTION: Odds + Pro Chart (Col 8 or 9) */}
+          {/* LEFT / PRIMARY: Compact Odds + TradingView Chart */}
           <section className={`lg:col-span-8 xl:col-span-9 flex flex-col space-y-2.5 ${
             mobileTab === 'chart' ? 'flex' : 'hidden lg:flex'
           }`}>
@@ -111,9 +143,10 @@ export function App() {
               upPrice={upPrice}
               downPrice={downPrice}
               settlement={settlement}
+              theme={theme}
             />
 
-            {/* TradingView Lightweight Pro Chart */}
+            {/* TradingView Pro Chart */}
             <div className="flex-1 min-h-[500px] flex flex-col">
               <ProTradingChart
                 data={activeCandles}
@@ -124,46 +157,52 @@ export function App() {
                 setChartMode={setChartMode}
                 chartStyle={chartStyle}
                 setChartStyle={setChartStyle}
+                theme={theme}
                 lastPrice={activeLastPrice}
                 strikePrice={settlement.strikePrice}
                 runningTwap={settlement.runningTwap}
+                showPrediction={showPrediction}
+                setShowPrediction={setShowPrediction}
+                predictedPrice={predictedPrice}
                 assetName={asset}
               />
             </div>
           </section>
 
-          {/* RIGHT / SECONDARY SECTION: Order Book + Trades + TWAP Analytics (Col 4 or 3) */}
+          {/* RIGHT / SECONDARY: Order Book + Live Trades + TWAP Analytics */}
           <section className={`lg:col-span-4 xl:col-span-3 flex flex-col space-y-2.5 ${
             mobileTab !== 'chart' ? 'flex' : 'hidden lg:flex'
           }`}>
-            {/* Mobile Single Tab Render */}
+            {/* Mobile View */}
             <div className="lg:hidden flex-1 flex flex-col">
-              {mobileTab === 'book' && <ClobOrderBook orderBook={orderBook} />}
-              {mobileTab === 'trades' && <LiveTradesTicker trades={trades} />}
+              {mobileTab === 'book' && <ClobOrderBook orderBook={orderBook} theme={theme} />}
+              {mobileTab === 'trades' && <LiveTradesTicker trades={trades} theme={theme} />}
               {mobileTab === 'twap' && (
                 <TwapAnalyticsCard
                   settlement={settlement}
                   eventData={activeEvent}
                   activeMarket={activeMarket}
                   slug={slug}
+                  theme={theme}
                 />
               )}
             </div>
 
             {/* Desktop Structured View */}
             <div className="hidden lg:flex flex-col space-y-2.5 flex-1">
-              {/* TWAP Analytics Card on Top */}
+              {/* Chainlink TWAP Settlement Card */}
               <TwapAnalyticsCard
                 settlement={settlement}
                 eventData={activeEvent}
                 activeMarket={activeMarket}
                 slug={slug}
+                theme={theme}
               />
 
-              {/* Order Book & Trades Split Panels */}
+              {/* Order Book & Live Trades Split View */}
               <div className="flex-1 grid grid-rows-2 gap-2.5 min-h-[460px]">
-                <ClobOrderBook orderBook={orderBook} />
-                <LiveTradesTicker trades={trades} />
+                <ClobOrderBook orderBook={orderBook} theme={theme} />
+                <LiveTradesTicker trades={trades} theme={theme} />
               </div>
             </div>
           </section>

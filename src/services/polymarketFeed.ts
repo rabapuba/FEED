@@ -5,6 +5,8 @@ export const CLOB_API_BASE = 'https://clob.polymarket.com';
 export const DATA_API_BASE = 'https://data-api.polymarket.com';
 export const CLOB_WS_URL = 'wss://ws-subscriptions-clob.polymarket.com/ws/market';
 
+const LOCAL_STORAGE_KEY_PREFIX = 'poly_candles_contract_v3_';
+
 /**
  * Returns current 5-minute floor timestamp in seconds.
  */
@@ -174,7 +176,7 @@ export async function fetchContractPricesHistory(tokenId: string, startTs: numbe
         high: Math.max(...ps),
         low: Math.min(...ps),
         close: ps[ps.length - 1],
-        volume: ps.length * 100,
+        volume: ps.length * 50,
       });
     }
 
@@ -182,6 +184,120 @@ export async function fetchContractPricesHistory(tokenId: string, startTs: numbe
   } catch (err) {
     return [];
   }
+}
+
+/**
+ * Merges two candle arrays preserving unique timestamps.
+ */
+export function mergeCandles(existing: OHLCData[], incoming: OHLCData[], maxCount: number = 300): OHLCData[] {
+  const map = new Map<number, OHLCData>();
+  for (const c of existing) map.set(c.time, c);
+  for (const c of incoming) {
+    const prev = map.get(c.time);
+    if (!prev) {
+      map.set(c.time, c);
+    } else {
+      map.set(c.time, {
+        time: c.time,
+        open: prev.open,
+        high: Math.max(prev.high, c.high),
+        low: Math.min(prev.low, c.low),
+        close: c.close,
+        volume: Math.max(prev.volume, c.volume),
+      });
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) => a.time - b.time).slice(-maxCount);
+}
+
+/**
+ * Loads cached contract candles from localStorage.
+ */
+export function loadCachedContractCandles(asset: CryptoAsset): OHLCData[] {
+  try {
+    const raw = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}${asset}`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {}
+  return [];
+}
+
+/**
+ * Saves contract candles to localStorage.
+ */
+export function saveCachedContractCandles(asset: CryptoAsset, candles: OHLCData[]) {
+  try {
+    if (candles.length > 0) {
+      localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}${asset}`, JSON.stringify(candles.slice(-240)));
+    }
+  } catch (e) {}
+}
+
+/**
+ * Fetches consecutive historical 5m contract rounds to construct a continuous KONTRAK chart.
+ */
+export async function fetchMultiWindowContractHistory(
+  asset: CryptoAsset,
+  currentWindowTs: number,
+  windowCount: number = 12
+): Promise<OHLCData[]> {
+  const timestamps: number[] = [];
+  for (let i = windowCount - 1; i >= 0; i--) {
+    timestamps.push(currentWindowTs - i * 300);
+  }
+
+  const results = await Promise.allSettled(
+    timestamps.map(async (wTs) => {
+      const slug = getPolymarketSlug(asset, wTs);
+      const evt = await fetchEventBySlug(slug);
+      if (!evt || !evt.markets || evt.markets.length === 0) return [];
+
+      const m = evt.markets[0];
+      let tokenUp = '';
+      try {
+        const tokens = typeof m.clobTokenIds === 'string' ? JSON.parse(m.clobTokenIds) : m.clobTokenIds;
+        if (Array.isArray(tokens) && tokens.length > 0) tokenUp = tokens[0];
+      } catch (e) {}
+
+      if (!tokenUp) return [];
+
+      const hist = await fetchContractPricesHistory(tokenUp, wTs - 60, wTs + 360);
+      if (hist.length > 0) return hist;
+
+      // Fallback: If no granular prices-history, use outcomePrices
+      if (m.outcomePrices) {
+        try {
+          const prices = typeof m.outcomePrices === 'string' ? JSON.parse(m.outcomePrices) : m.outcomePrices;
+          if (Array.isArray(prices) && prices.length > 0) {
+            const p = parseFloat(prices[0]);
+            if (!isNaN(p) && p > 0 && p < 1) {
+              return [
+                { time: wTs, open: p, high: p, low: p, close: p, volume: 100 },
+                { time: wTs + 60, open: p, high: p, low: p, close: p, volume: 100 },
+                { time: wTs + 120, open: p, high: p, low: p, close: p, volume: 100 },
+                { time: wTs + 180, open: p, high: p, low: p, close: p, volume: 100 },
+                { time: wTs + 240, open: p, high: p, low: p, close: p, volume: 100 },
+              ];
+            }
+          }
+        } catch (e) {}
+      }
+
+      return [];
+    })
+  );
+
+  let merged: OHLCData[] = [];
+  for (const r of results) {
+    if (r.status === 'fulfilled' && r.value.length > 0) {
+      merged = mergeCandles(merged, r.value, 300);
+    }
+  }
+
+  return merged;
 }
 
 /**
