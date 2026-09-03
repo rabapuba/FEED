@@ -37,11 +37,32 @@ import {
   toHeikinAshi,
 } from '../services/twapEngine';
 
+export function getTimeframeSeconds(tf: TimeFrame): number {
+  switch (tf) {
+    case '5s': return 5;
+    case '15s': return 15;
+    case '30s': return 30;
+    case '1m': return 60;
+    case '5m': return 300;
+    case '15m': return 900;
+    default: return 60;
+  }
+}
+
 export function useTradingTerminal() {
   const [asset, setAsset] = useState<CryptoAsset>('BTC');
   const [timeframe, setTimeframe] = useState<TimeFrame>('1m');
   const [chartMode, setChartMode] = useState<ChartMode>('SPOT');
   const [chartStyle, setChartStyle] = useState<ChartStyle>('candles');
+
+  const assetRef = useRef<CryptoAsset>(asset);
+  assetRef.current = asset;
+  const timeframeRef = useRef<TimeFrame>(timeframe);
+  timeframeRef.current = timeframe;
+  const chartModeRef = useRef<ChartMode>(chartMode);
+  chartModeRef.current = chartMode;
+  const chartStyleRef = useRef<ChartStyle>(chartStyle);
+  chartStyleRef.current = chartStyle;
 
   // Theme Mode (Dark / Light)
   const [theme, setThemeState] = useState<ThemeMode>(() => {
@@ -71,7 +92,6 @@ export function useTradingTerminal() {
     setTheme(theme === 'dark' ? 'light' : 'dark');
   }, [theme, setTheme]);
 
-  // Initial sync of html class
   useEffect(() => {
     if (theme === 'light') {
       document.documentElement.classList.remove('dark');
@@ -117,9 +137,11 @@ export function useTradingTerminal() {
     progressPct: 0,
   });
 
-  // Candlestick Storage (Granular 5s base buffers)
-  const spotBaseCandlesRef = useRef<OHLCData[]>([]);
+  // Candlestick Storage
+  const spotActiveCandlesRef = useRef<OHLCData[]>([]);
   const contractBaseCandlesRef = useRef<OHLCData[]>([]);
+  const contractActiveCandlesRef = useRef<OHLCData[]>([]);
+
   const [activeCandles, setActiveCandles] = useState<OHLCData[]>([]);
   const [twapLineData, setTwapLineData] = useState<Array<{ time: number; value: number }>>([]);
 
@@ -147,7 +169,6 @@ export function useTradingTerminal() {
   const binanceManagerRef = useRef<BinanceStreamManager | null>(null);
   const polyWsManagerRef = useRef<PolymarketClobWsManager | null>(null);
   const latestSpotRef = useRef<number>(0);
-  const latestContractRef = useRef<number>(0.5);
   const strikePriceRef = useRef<number>(0);
   const currentWindowRef = useRef<number>(currentWindowTs);
   currentWindowRef.current = currentWindowTs;
@@ -161,7 +182,6 @@ export function useTradingTerminal() {
       const nowSec = Math.floor(Date.now() / 1000);
       const windowFloor = Math.floor(nowSec / 300) * 300;
 
-      // Handle window rollover
       if (windowFloor !== currentWindowRef.current) {
         currentWindowRef.current = windowFloor;
         setCurrentWindowTs(windowFloor);
@@ -169,13 +189,11 @@ export function useTradingTerminal() {
         strikePriceRef.current = latestSpotRef.current;
       }
 
-      // Compute latest settlement metrics
       if (latestSpotRef.current > 0) {
         twapEngineRef.current.recordPrice(latestSpotRef.current, nowSec);
         const st = twapEngineRef.current.computeRoundSettlement(latestSpotRef.current, nowSec);
         setSettlement(st);
 
-        // Add to TWAP line series for chart
         if (nowSec >= windowFloor) {
           setTwapLineData((prev) => {
             const copy = [...prev];
@@ -194,77 +212,71 @@ export function useTradingTerminal() {
     return () => clearInterval(timerInterval);
   }, []);
 
-  // 2. Recompute Active Candles on TimeFrame / Mode / Style Change
-  const refreshActiveCandles = useCallback(() => {
-    const isSpot = chartMode === 'SPOT';
-    const base = isSpot ? spotBaseCandlesRef.current : contractBaseCandlesRef.current;
-    if (base.length === 0) {
+  // Helper to re-emit active candles
+  const emitCandles = useCallback(() => {
+    const isSpot = chartModeRef.current === 'SPOT';
+    const source = isSpot ? spotActiveCandlesRef.current : contractActiveCandlesRef.current;
+    if (source.length === 0) {
       setActiveCandles([]);
       return;
     }
 
-    let aggregated = aggregateCandles(base, timeframe, 300);
-    if (chartStyle === 'heikin-ashi') {
-      aggregated = toHeikinAshi(aggregated);
+    if (chartStyleRef.current === 'heikin-ashi') {
+      setActiveCandles(toHeikinAshi(source));
+    } else {
+      setActiveCandles([...source]);
     }
-    setActiveCandles(aggregated);
-  }, [timeframe, chartMode, chartStyle]);
+  }, []);
 
-  // 3. Process Live Option / Contract Tick
-  const processContractTick = useCallback((price: number, size: number, timestampSec: number) => {
-    if (price > 0 && price < 1) {
-      setUpPrice(price);
-      setDownPrice(parseFloat((1 - price).toFixed(3)));
-      latestContractRef.current = price;
-
-      const bucketTime = Math.floor(timestampSec / 5) * 5;
-      const base = contractBaseCandlesRef.current;
-      if (base.length > 0) {
-        const last = base[base.length - 1];
-        if (last.time === bucketTime) {
-          last.high = Math.max(last.high, price);
-          last.low = Math.min(last.low, price);
-          last.close = price;
-          last.volume += size;
-        } else {
-          base.push({ time: bucketTime, open: price, high: price, low: price, close: price, volume: size });
-          if (base.length > 600) base.shift();
-        }
-      } else {
-        base.push({ time: bucketTime, open: price, high: price, low: price, close: price, volume: size });
-      }
-
-      saveCachedContractCandles(asset, base);
-
-      if (chartMode === 'CONTRACT') {
-        refreshActiveCandles();
-      }
-    }
-  }, [asset, chartMode, refreshActiveCandles]);
-
-  // 4. Binance Low Latency Stream Manager (Spot Data)
+  // 2. Load SPOT Candles whenever asset or timeframe changes
   useEffect(() => {
-    let isSubscribed = true;
+    let isCancelled = false;
 
-    async function loadSpotHistory() {
-      const klines1m = await fetchBinanceKlines(asset, '1m', 150);
-      if (!isSubscribed || klines1m.length === 0) return;
+    async function loadSpotKlines() {
+      const tf = timeframeRef.current;
+      const curAsset = assetRef.current;
 
-      spotBaseCandlesRef.current = klines1m;
-      const lastCandle = klines1m[klines1m.length - 1];
+      let raw: OHLCData[] = [];
+      if (tf === '5s' || tf === '15s' || tf === '30s') {
+        // Fetch 300 1-second candles and aggregate to 5s, 15s, or 30s
+        const raw1s = await fetchBinanceKlines(curAsset, '1s', 300);
+        if (isCancelled) return;
+        raw = aggregateCandles(raw1s, tf, 200);
+      } else if (tf === '1m') {
+        raw = await fetchBinanceKlines(curAsset, '1m', 150);
+      } else if (tf === '5m') {
+        raw = await fetchBinanceKlines(curAsset, '5m', 120);
+      } else if (tf === '15m') {
+        raw = await fetchBinanceKlines(curAsset, '15m', 100);
+      }
+
+      if (isCancelled || raw.length === 0) return;
+
+      spotActiveCandlesRef.current = raw;
+      const lastCandle = raw[raw.length - 1];
       latestSpotRef.current = lastCandle.close;
       setSpotPrice(lastCandle.close);
 
-      const startCandle = klines1m.find((c) => c.time === currentWindowRef.current) || lastCandle;
+      // Strike price detection
+      const startCandle = raw.find((c) => c.time === currentWindowRef.current) || lastCandle;
       strikePriceRef.current = startCandle.open || startCandle.close;
       twapEngineRef.current.setStrikePrice(strikePriceRef.current);
 
-      if (chartMode === 'SPOT') {
-        refreshActiveCandles();
+      if (chartModeRef.current === 'SPOT') {
+        emitCandles();
       }
     }
 
-    loadSpotHistory();
+    loadSpotKlines();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [asset, timeframe, emitCandles]);
+
+  // 3. Binance Live WebSocket Tick Pipeline
+  useEffect(() => {
+    binanceManagerRef.current?.destroy();
 
     binanceManagerRef.current = new BinanceStreamManager(
       asset,
@@ -281,7 +293,7 @@ export function useTradingTerminal() {
           const oldest = priceRollingQueueRef.current[0];
           const dtSec = (nowMs - oldest.time) / 1000;
           if (dtSec > 0.5) {
-            const velocity = (tick.price - oldest.price) / dtSec; // $/sec
+            const velocity = (tick.price - oldest.price) / dtSec;
             const projected = tick.price + (velocity * 30);
             setPredictedPrice(projected);
           }
@@ -289,20 +301,20 @@ export function useTradingTerminal() {
           setPredictedPrice(tick.price);
         }
 
-        // Micro-update active spot candle buffer
-        const nowSec = tick.timeSec;
-        const bucketTime = Math.floor(nowSec / 5) * 5;
-        const base = spotBaseCandlesRef.current;
+        // Real-time tick into spotActiveCandlesRef according to current timeframe
+        const pSec = getTimeframeSeconds(timeframeRef.current);
+        const bucketTime = Math.floor(tick.timeSec / pSec) * pSec;
+        const arr = spotActiveCandlesRef.current;
 
-        if (base.length > 0) {
-          const last = base[base.length - 1];
+        if (arr.length > 0) {
+          const last = arr[arr.length - 1];
           if (last.time === bucketTime) {
             last.high = Math.max(last.high, tick.price);
             last.low = Math.min(last.low, tick.price);
             last.close = tick.price;
             last.volume += tick.size;
-          } else {
-            base.push({
+          } else if (bucketTime > last.time) {
+            arr.push({
               time: bucketTime,
               open: tick.price,
               high: tick.price,
@@ -310,10 +322,10 @@ export function useTradingTerminal() {
               close: tick.price,
               volume: tick.size,
             });
-            if (base.length > 600) base.shift();
+            if (arr.length > 250) arr.shift();
           }
         } else {
-          base.push({
+          arr.push({
             time: bucketTime,
             open: tick.price,
             high: tick.price,
@@ -323,7 +335,7 @@ export function useTradingTerminal() {
           });
         }
 
-        // Throttle UI re-render
+        // Throttle UI update via RAF
         if (!rafPendingRef.current) {
           rafPendingRef.current = true;
           requestAnimationFrame(() => {
@@ -334,8 +346,9 @@ export function useTradingTerminal() {
               binanceWsPingMs: tick.latencyMs,
               lastUpdateTimestamp: Date.now(),
             }));
-            if (chartMode === 'SPOT') {
-              refreshActiveCandles();
+
+            if (chartModeRef.current === 'SPOT') {
+              emitCandles();
             }
             rafPendingRef.current = false;
           });
@@ -347,52 +360,86 @@ export function useTradingTerminal() {
     );
 
     return () => {
-      isSubscribed = false;
       binanceManagerRef.current?.destroy();
       binanceManagerRef.current = null;
     };
-  }, [asset, chartMode, refreshActiveCandles]);
+  }, [asset, emitCandles]);
 
-  // 5. Polymarket Contract History & Multi-Window Loading
+  // 4. Contract Candle Tick Processor
+  const processContractTick = useCallback((price: number, size: number, timestampSec: number) => {
+    if (price <= 0 || price >= 1) return;
+
+    setUpPrice(price);
+    setDownPrice(parseFloat((1 - price).toFixed(3)));
+
+    const pSec = getTimeframeSeconds(timeframeRef.current);
+    const bucketTime = Math.floor(timestampSec / pSec) * pSec;
+    const arr = contractActiveCandlesRef.current;
+
+    if (arr.length > 0) {
+      const last = arr[arr.length - 1];
+      if (last.time === bucketTime) {
+        last.high = Math.max(last.high, price);
+        last.low = Math.min(last.low, price);
+        last.close = price;
+        last.volume += size;
+      } else if (bucketTime > last.time) {
+        arr.push({ time: bucketTime, open: price, high: price, low: price, close: price, volume: size });
+        if (arr.length > 250) arr.shift();
+      }
+    } else {
+      arr.push({ time: bucketTime, open: price, high: price, low: price, close: price, volume: size });
+    }
+
+    saveCachedContractCandles(assetRef.current, arr);
+
+    if (chartModeRef.current === 'CONTRACT') {
+      emitCandles();
+    }
+  }, [emitCandles]);
+
+  // 5. Load KONTRAK History & Multi-Window
   useEffect(() => {
     let isCancelled = false;
 
-    // Load cached contract candles first for zero delay
+    // Load cached contract candles first
     const cached = loadCachedContractCandles(asset);
     if (cached.length > 0) {
       contractBaseCandlesRef.current = cached;
+      contractActiveCandlesRef.current = aggregateCandles(cached, timeframe, 200);
       if (chartMode === 'CONTRACT') {
-        refreshActiveCandles();
+        emitCandles();
       }
     }
 
-    async function loadContractMultiWindow() {
+    async function loadContractHistory() {
       try {
-        const multiHistory = await fetchMultiWindowContractHistory(asset, currentWindowTs, 12);
-        if (!isCancelled && multiHistory.length > 0) {
-          contractBaseCandlesRef.current = mergeCandles(contractBaseCandlesRef.current, multiHistory, 300);
-          saveCachedContractCandles(asset, contractBaseCandlesRef.current);
+        const multi = await fetchMultiWindowContractHistory(asset, currentWindowTs, 12);
+        if (!isCancelled && multi.length > 0) {
+          const merged = mergeCandles(contractBaseCandlesRef.current, multi, 300);
+          contractBaseCandlesRef.current = merged;
+          saveCachedContractCandles(asset, merged);
+          contractActiveCandlesRef.current = aggregateCandles(merged, timeframe, 200);
+
           if (chartMode === 'CONTRACT') {
-            refreshActiveCandles();
+            emitCandles();
           }
         }
-      } catch (e) {
-        console.error('Failed to load multi-window contract history:', e);
-      }
+      } catch (e) {}
     }
 
-    loadContractMultiWindow();
+    loadContractHistory();
 
     return () => {
       isCancelled = true;
     };
-  }, [asset, currentWindowTs, chartMode, refreshActiveCandles]);
+  }, [asset, currentWindowTs, timeframe, chartMode, emitCandles]);
 
-  // 6. Polymarket 5M Active Event & Live CLOB WebSocket
+  // 6. Polymarket Event & CLOB OrderBook stream
   useEffect(() => {
     let isCancelled = false;
 
-    async function loadMarketAndOrderBook() {
+    async function loadMarketAndBook() {
       const slug = getPolymarketSlug(asset, currentWindowTs);
       const evt = await fetchEventBySlug(slug);
       if (isCancelled) return;
@@ -416,39 +463,31 @@ export function useTradingTerminal() {
         setDownTokenId(tDown);
 
         if (tUp) {
-          // Midpoint
           const mid = await fetchClobMidpoint(tUp);
           if (mid !== null && !isCancelled) {
-            setUpPrice(mid);
-            setDownPrice(parseFloat((1 - mid).toFixed(3)));
             processContractTick(mid, 10, Math.floor(Date.now() / 1000));
           } else if (m.outcomePrices) {
             try {
               const p = typeof m.outcomePrices === 'string' ? JSON.parse(m.outcomePrices) : m.outcomePrices;
               if (Array.isArray(p) && p.length >= 2) {
                 const p0 = parseFloat(p[0]);
-                setUpPrice(p0);
-                setDownPrice(parseFloat(p[1]));
                 processContractTick(p0, 10, Math.floor(Date.now() / 1000));
               }
             } catch (e) {}
           }
 
-          // Order Book
           const book = await fetchOrderBook(tUp);
           if (book && !isCancelled) setOrderBook(book);
 
-          // Recent token price history
           const hist = await fetchContractPricesHistory(tUp, currentWindowTs - 600, currentWindowTs + 300);
           if (!isCancelled && hist.length > 0) {
             contractBaseCandlesRef.current = mergeCandles(contractBaseCandlesRef.current, hist, 300);
-            saveCachedContractCandles(asset, contractBaseCandlesRef.current);
+            contractActiveCandlesRef.current = aggregateCandles(contractBaseCandlesRef.current, timeframe, 200);
             if (chartMode === 'CONTRACT') {
-              refreshActiveCandles();
+              emitCandles();
             }
           }
 
-          // Connect / Subscribe CLOB WS
           polyWsManagerRef.current?.subscribeTokens(tUp, tDown);
         }
 
@@ -461,9 +500,8 @@ export function useTradingTerminal() {
       }
     }
 
-    loadMarketAndOrderBook();
+    loadMarketAndBook();
 
-    // Setup Polymarket CLOB WebSocket
     polyWsManagerRef.current = new PolymarketClobWsManager({
       onTick: (_tokenId, price, size, side) => {
         const nowSec = Math.floor(Date.now() / 1000);
@@ -505,15 +543,12 @@ export function useTradingTerminal() {
       },
     });
 
-    // High frequency 1.5-second fallback polling for CLOB book & price
     const pollInterval = setInterval(async () => {
       if (!upTokenId) return;
       const b = await fetchOrderBook(upTokenId);
       if (b && !isCancelled) setOrderBook(b);
       const mid = await fetchClobMidpoint(upTokenId);
       if (mid !== null && !isCancelled) {
-        setUpPrice(mid);
-        setDownPrice(parseFloat((1 - mid).toFixed(3)));
         processContractTick(mid, 10, Math.floor(Date.now() / 1000));
       }
     }, 1500);
@@ -524,7 +559,12 @@ export function useTradingTerminal() {
       polyWsManagerRef.current?.destroy();
       polyWsManagerRef.current = null;
     };
-  }, [asset, currentWindowTs, upTokenId, chartMode, processContractTick, refreshActiveCandles]);
+  }, [asset, currentWindowTs, upTokenId, timeframe, chartMode, processContractTick, emitCandles]);
+
+  // When chart mode or style changes, re-emit
+  useEffect(() => {
+    emitCandles();
+  }, [chartMode, chartStyle, emitCandles]);
 
   return {
     asset,

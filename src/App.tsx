@@ -48,7 +48,7 @@ export function App() {
 
   return (
     <div
-      className={`min-h-screen flex flex-col font-sans selection:bg-cyan-500 selection:text-black transition-colors ${
+      className={`min-h-screen lg:h-screen lg:max-h-screen lg:overflow-hidden flex flex-col font-sans selection:bg-cyan-500 selection:text-black transition-colors ${
         isDark ? 'bg-[#07090e] text-slate-100' : 'bg-[#f8fafc] text-slate-900'
       }`}
     >
@@ -68,12 +68,12 @@ export function App() {
         setShowPrediction={setShowPrediction}
       />
 
-      {/* Main Terminal Area */}
-      <main className="flex-1 p-2 sm:p-3.5 max-w-[1920px] w-full mx-auto flex flex-col gap-2.5">
+      {/* Main Terminal Area (100% Fit in Single PC Viewport without Scrolling) */}
+      <main className="flex-1 min-h-0 p-2 max-w-[1920px] w-full mx-auto flex flex-col lg:overflow-hidden">
         
         {/* Mobile Tab Switcher (Visible only on mobile/tablet) */}
         <div
-          className={`lg:hidden flex items-center p-1 rounded-xl border text-xs font-mono select-none ${
+          className={`lg:hidden flex items-center p-1 rounded-xl border text-xs font-mono select-none mb-2 ${
             isDark ? 'bg-[#0d131f] border-[#1a2337]' : 'bg-white border-slate-200 shadow-sm'
           }`}
         >
@@ -132,10 +132,10 @@ export function App() {
         </div>
 
         {/* Dual Layout Grid (Desktop vs Mobile) */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 flex-1">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 flex-1 min-h-0">
           
           {/* LEFT / PRIMARY: Compact Odds + TradingView Chart */}
-          <section className={`lg:col-span-8 xl:col-span-9 flex flex-col space-y-2.5 ${
+          <section className={`lg:col-span-8 xl:col-span-9 flex flex-col h-full min-h-0 space-y-2 ${
             mobileTab === 'chart' ? 'flex' : 'hidden lg:flex'
           }`}>
             {/* Compact Odds Bar */}
@@ -146,8 +146,8 @@ export function App() {
               theme={theme}
             />
 
-            {/* TradingView Pro Chart */}
-            <div className="flex-1 min-h-[500px] flex flex-col">
+            {/* TradingView Pro Chart (Dynamic Full Height) */}
+            <div className="flex-1 min-h-0 h-full w-full flex flex-col">
               <ProTradingChart
                 data={activeCandles}
                 twapData={twapLineData}
@@ -170,13 +170,13 @@ export function App() {
           </section>
 
           {/* RIGHT / SECONDARY: Order Book + Live Trades + TWAP Analytics */}
-          <section className={`lg:col-span-4 xl:col-span-3 flex flex-col space-y-2.5 ${
+          <section className={`lg:col-span-4 xl:col-span-3 flex flex-col h-full min-h-0 space-y-2 ${
             mobileTab !== 'chart' ? 'flex' : 'hidden lg:flex'
           }`}>
             {/* Mobile View */}
-            <div className="lg:hidden flex-1 flex flex-col">
-              {mobileTab === 'book' && <ClobOrderBook orderBook={orderBook} theme={theme} />}
-              {mobileTab === 'trades' && <LiveTradesTicker trades={trades} theme={theme} />}
+            <div className="lg:hidden flex-1 flex flex-col space-y-2">
+              {mobileTab === 'book' && <div className="h-[480px]"><ClobOrderBook orderBook={orderBook} theme={theme} /></div>}
+              {mobileTab === 'trades' && <div className="h-[480px]"><LiveTradesTicker trades={trades} theme={theme} /></div>}
               {mobileTab === 'twap' && (
                 <TwapAnalyticsCard
                   settlement={settlement}
@@ -188,8 +188,8 @@ export function App() {
               )}
             </div>
 
-            {/* Desktop Structured View */}
-            <div className="hidden lg:flex flex-col space-y-2.5 flex-1">
+            {/* Desktop Structured View (Zero Scroll, Exact Fit) */}
+            <div className="hidden lg:flex flex-col h-full min-h-0 space-y-2">
               {/* Chainlink TWAP Settlement Card */}
               <TwapAnalyticsCard
                 settlement={settlement}
@@ -200,7 +200,7 @@ export function App() {
               />
 
               {/* Order Book & Live Trades Split View */}
-              <div className="flex-1 grid grid-rows-2 gap-2.5 min-h-[460px]">
+              <div className="flex-1 min-h-0 grid grid-rows-2 gap-2">
                 <ClobOrderBook orderBook={orderBook} theme={theme} />
                 <LiveTradesTicker trades={trades} theme={theme} />
               </div>

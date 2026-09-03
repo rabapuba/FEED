@@ -10,10 +10,11 @@ export const ASSET_SYMBOLS: Record<CryptoAsset, { spotSymbol: string; streamSymb
 
 /**
  * Fetches historical OHLC candles from Binance REST API.
+ * Supports native intervals including '1s' for micro-timeframe accuracy!
  */
 export async function fetchBinanceKlines(
   asset: CryptoAsset,
-  interval: '1m' | '5m' | '15m' = '1m',
+  interval: '1s' | '1m' | '5m' | '15m' = '1m',
   limit: number = 200
 ): Promise<OHLCData[]> {
   try {

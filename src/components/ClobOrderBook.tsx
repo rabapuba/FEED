@@ -11,8 +11,8 @@ export const ClobOrderBook: React.FC<ClobOrderBookProps> = ({ orderBook, theme =
   const { bids, asks, lastPrice, spread } = orderBook;
   const isDark = theme === 'dark';
 
-  const displayAsks = asks.slice(0, 7).reverse();
-  const displayBids = bids.slice(0, 7);
+  const displayAsks = asks.slice(0, 6).reverse();
+  const displayBids = bids.slice(0, 6);
 
   const maxAskSize = Math.max(...displayAsks.map((a) => a.size), 10);
   const maxBidSize = Math.max(...displayBids.map((b) => b.size), 10);
@@ -20,40 +20,40 @@ export const ClobOrderBook: React.FC<ClobOrderBookProps> = ({ orderBook, theme =
 
   return (
     <div
-      className={`border rounded-xl p-3 flex flex-col h-full font-mono text-xs shadow-xl select-none transition-colors ${
+      className={`border rounded-xl p-2 flex flex-col h-full min-h-0 font-mono text-xs shadow-md select-none transition-colors overflow-hidden ${
         isDark ? 'bg-[#080b11] border-[#1a2337]' : 'bg-white border-slate-200 text-slate-800'
       }`}
     >
       {/* Book Header */}
       <div
-        className={`flex items-center justify-between pb-2 border-b mb-1.5 font-bold text-[11px] uppercase tracking-wider ${
+        className={`flex items-center justify-between pb-1 border-b mb-1 font-bold text-[10px] uppercase tracking-wider flex-shrink-0 ${
           isDark ? 'border-[#161f33] text-slate-400' : 'border-slate-200 text-slate-500'
         }`}
       >
-        <div className="flex items-center space-x-1.5">
-          <BookOpen className="w-3.5 h-3.5 text-blue-500" />
+        <div className="flex items-center space-x-1">
+          <BookOpen className="w-3 h-3 text-blue-500" />
           <span className={isDark ? 'text-slate-200' : 'text-slate-800'}>ORDER BOOK (CLOB)</span>
         </div>
-        <span className="text-[10px] text-slate-400 font-normal">POLYGON L2</span>
+        <span className="text-[9px] text-slate-400 font-normal">POLYGON L2</span>
       </div>
 
-      <div className="grid grid-cols-3 pb-1 text-[10px] font-bold text-slate-400 uppercase">
+      <div className="grid grid-cols-3 pb-0.5 text-[9px] font-bold text-slate-400 uppercase flex-shrink-0">
         <span>HARGA</span>
         <span className="text-right">JUMLAH</span>
         <span className="text-right">TOTAL</span>
       </div>
 
       {/* Asks (Sell Orders) */}
-      <div className="flex flex-col space-y-0.5 overflow-hidden flex-1 justify-end">
+      <div className="flex flex-col space-y-0.5 overflow-hidden flex-1 min-h-0 justify-end">
         {displayAsks.length === 0 ? (
-          <div className="text-center text-slate-400 py-3 text-[11px]">Memuat antrean jual...</div>
+          <div className="text-center text-slate-400 py-2 text-[10px]">Memuat antrean jual...</div>
         ) : (
           displayAsks.map((ask, idx) => {
             const depthPct = Math.min(100, Math.max(5, (ask.size / maxSize) * 100));
             return (
               <div
                 key={`ask-${idx}`}
-                className={`relative grid grid-cols-3 py-0.5 px-1.5 rounded cursor-pointer transition-colors ${
+                className={`relative grid grid-cols-3 py-0.5 px-1 rounded cursor-pointer transition-colors text-[10px] ${
                   isDark ? 'hover:bg-rose-950/30' : 'hover:bg-rose-50'
                 }`}
               >
@@ -78,32 +78,32 @@ export const ClobOrderBook: React.FC<ClobOrderBookProps> = ({ orderBook, theme =
 
       {/* Mid Price & Spread Bar */}
       <div
-        className={`my-1.5 py-1.5 px-2.5 border rounded-lg flex items-center justify-between shadow-inner ${
+        className={`my-1 py-1 px-2 border rounded-lg flex items-center justify-between shadow-inner flex-shrink-0 ${
           isDark ? 'bg-[#0e1422] border-[#1e2a44]' : 'bg-slate-100 border-slate-200'
         }`}
       >
-        <div className="flex items-center space-x-2">
-          <span className="text-slate-400 text-[10px] font-bold">MID:</span>
-          <span className={`font-black text-sm ${isDark ? 'text-white' : 'text-slate-900'}`}>
+        <div className="flex items-center space-x-1.5">
+          <span className="text-slate-400 text-[9px] font-bold">MID:</span>
+          <span className={`font-black text-xs sm:text-sm ${isDark ? 'text-white' : 'text-slate-900'}`}>
             ${lastPrice.toFixed(3)}
           </span>
         </div>
-        <div className="text-[10px] text-slate-500 font-bold">
+        <div className="text-[9px] text-slate-500 font-bold">
           SPREAD: <span className="text-amber-500 font-black">${spread.toFixed(3)}</span>
         </div>
       </div>
 
       {/* Bids (Buy Orders) */}
-      <div className="flex flex-col space-y-0.5 overflow-hidden flex-1">
+      <div className="flex flex-col space-y-0.5 overflow-hidden flex-1 min-h-0">
         {displayBids.length === 0 ? (
-          <div className="text-center text-slate-400 py-3 text-[11px]">Memuat antrean beli...</div>
+          <div className="text-center text-slate-400 py-2 text-[10px]">Memuat antrean beli...</div>
         ) : (
           displayBids.map((bid, idx) => {
             const depthPct = Math.min(100, Math.max(5, (bid.size / maxSize) * 100));
             return (
               <div
                 key={`bid-${idx}`}
-                className={`relative grid grid-cols-3 py-0.5 px-1.5 rounded cursor-pointer transition-colors ${
+                className={`relative grid grid-cols-3 py-0.5 px-1 rounded cursor-pointer transition-colors text-[10px] ${
                   isDark ? 'hover:bg-emerald-950/30' : 'hover:bg-emerald-50'
                 }`}
               >
