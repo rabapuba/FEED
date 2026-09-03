@@ -48,8 +48,8 @@ export function App() {
 
   return (
     <div
-      className={`min-h-screen lg:h-screen lg:max-h-screen lg:overflow-hidden flex flex-col font-sans selection:bg-cyan-500 selection:text-black transition-colors ${
-        isDark ? 'bg-[#07090e] text-slate-100' : 'bg-[#f8fafc] text-slate-900'
+      className={`min-h-screen lg:h-screen lg:max-h-screen lg:overflow-hidden flex flex-col font-sans selection:bg-[#f0b90b] selection:text-black transition-colors ${
+        isDark ? 'bg-[#12161c] text-[#eaecef]' : 'bg-[#f7f9fa] text-[#1e2329]'
       }`}
     >
       {/* Top Pro Sticky Header */}
@@ -74,16 +74,16 @@ export function App() {
         {/* Mobile Tab Switcher (Visible only on mobile/tablet) */}
         <div
           className={`lg:hidden flex items-center p-1 rounded-xl border text-xs font-mono select-none mb-2 ${
-            isDark ? 'bg-[#0d131f] border-[#1a2337]' : 'bg-white border-slate-200 shadow-sm'
+            isDark ? 'bg-[#181a20] border-[#2b313a]' : 'bg-white border-[#eaecef] shadow-sm'
           }`}
         >
           <button
             onClick={() => setMobileTab('chart')}
             className={`flex-1 py-1.5 rounded-lg flex items-center justify-center space-x-1 font-bold transition-all ${
               mobileTab === 'chart'
-                ? 'bg-cyan-500 text-black shadow font-black'
+                ? 'bg-[#f0b90b] text-black shadow font-black'
                 : isDark
-                ? 'text-slate-400'
+                ? 'text-[#848e9c]'
                 : 'text-slate-600'
             }`}
           >
@@ -94,9 +94,9 @@ export function App() {
             onClick={() => setMobileTab('book')}
             className={`flex-1 py-1.5 rounded-lg flex items-center justify-center space-x-1 font-bold transition-all ${
               mobileTab === 'book'
-                ? 'bg-cyan-500 text-black shadow font-black'
+                ? 'bg-[#f0b90b] text-black shadow font-black'
                 : isDark
-                ? 'text-slate-400'
+                ? 'text-[#848e9c]'
                 : 'text-slate-600'
             }`}
           >
@@ -107,9 +107,9 @@ export function App() {
             onClick={() => setMobileTab('trades')}
             className={`flex-1 py-1.5 rounded-lg flex items-center justify-center space-x-1 font-bold transition-all ${
               mobileTab === 'trades'
-                ? 'bg-cyan-500 text-black shadow font-black'
+                ? 'bg-[#f0b90b] text-black shadow font-black'
                 : isDark
-                ? 'text-slate-400'
+                ? 'text-[#848e9c]'
                 : 'text-slate-600'
             }`}
           >
@@ -120,9 +120,9 @@ export function App() {
             onClick={() => setMobileTab('twap')}
             className={`flex-1 py-1.5 rounded-lg flex items-center justify-center space-x-1 font-bold transition-all ${
               mobileTab === 'twap'
-                ? 'bg-cyan-500 text-black shadow font-black'
+                ? 'bg-[#f0b90b] text-black shadow font-black'
                 : isDark
-                ? 'text-slate-400'
+                ? 'text-[#848e9c]'
                 : 'text-slate-600'
             }`}
           >
@@ -134,11 +134,11 @@ export function App() {
         {/* Dual Layout Grid (Desktop vs Mobile) */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 flex-1 min-h-0">
           
-          {/* LEFT / PRIMARY: Compact Odds + TradingView Chart */}
+          {/* LEFT / PRIMARY: Compact Odds + Binance Pro Chart */}
           <section className={`lg:col-span-8 xl:col-span-9 flex flex-col h-full min-h-0 space-y-2 ${
             mobileTab === 'chart' ? 'flex' : 'hidden lg:flex'
           }`}>
-            {/* Compact Odds Bar */}
+            {/* Compact Odds Bar (Super Vibrant Glowing) */}
             <CompactOddsBar
               upPrice={upPrice}
               downPrice={downPrice}
@@ -146,7 +146,7 @@ export function App() {
               theme={theme}
             />
 
-            {/* TradingView Pro Chart (Dynamic Full Height) */}
+            {/* TradingView / Binance Pro Chart (Dynamic Full Height) */}
             <div className="flex-1 min-h-0 h-full w-full flex flex-col">
               <ProTradingChart
                 data={activeCandles}

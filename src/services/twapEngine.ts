@@ -1,6 +1,78 @@
 import { OHLCData, TimeFrame, RoundSettlementState } from '../types/market';
 
 /**
+ * Ensures candle array has strictly ascending, non-duplicate timestamps.
+ * Merges duplicate timestamps by taking earliest open, max high, min low, latest close, sum volume.
+ */
+export function ensureStrictlyAscending(candles: OHLCData[]): OHLCData[] {
+  if (candles.length === 0) return [];
+  const sorted = [...candles].sort((a, b) => a.time - b.time);
+  const result: OHLCData[] = [];
+
+  for (const c of sorted) {
+    if (isNaN(c.time) || isNaN(c.close) || c.close <= 0) continue;
+
+    if (result.length === 0) {
+      result.push({ ...c });
+    } else {
+      const last = result[result.length - 1];
+      if (c.time > last.time) {
+        result.push({ ...c });
+      } else if (c.time === last.time) {
+        last.high = Math.max(last.high, c.high);
+        last.low = Math.min(last.low, c.low);
+        last.close = c.close;
+        last.volume += c.volume;
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Resamples contract candles safely for any target timeframe (including micro-timeframes 5s, 15s, 30s)
+ * without leaving gaps or producing duplicate timestamps.
+ */
+export function resampleContractCandles(candles: OHLCData[], tf: TimeFrame, maxCount: number = 300): OHLCData[] {
+  if (candles.length === 0) return [];
+  const clean = ensureStrictlyAscending(candles);
+
+  const tfSecondsMap: Record<TimeFrame, number> = {
+    '5s': 5,
+    '15s': 15,
+    '30s': 30,
+    '1m': 60,
+    '5m': 300,
+    '15m': 900,
+  };
+  const targetSec = tfSecondsMap[tf] || 60;
+
+  if (targetSec >= 60) {
+    return aggregateCandles(clean, tf, maxCount);
+  }
+
+  // For micro-timeframes (5s, 15s, 30s): expand 1m candles into contiguous micro-bars
+  const expanded: OHLCData[] = [];
+  for (const c of clean) {
+    const subCount = 60 / targetSec;
+    for (let i = 0; i < subCount; i++) {
+      const subTime = c.time + (i * targetSec);
+      expanded.push({
+        time: subTime,
+        open: i === 0 ? c.open : c.close,
+        high: Math.max(c.open, c.close),
+        low: Math.min(c.open, c.close),
+        close: c.close,
+        volume: Math.round(c.volume / subCount),
+      });
+    }
+  }
+
+  return ensureStrictlyAscending(expanded).slice(-maxCount);
+}
+
+/**
  * Real-time Chainlink TWAP (Time-Weighted Average Price) Accumulator
  * Calculates exact running settlement benchmark for 5-minute Polymarket Up/Down rounds.
  */
@@ -28,7 +100,6 @@ export class TwapEngine {
   public recordPrice(price: number, timestampSec: number) {
     if (price <= 0) return;
 
-    // Only record within current window
     if (timestampSec >= this.windowTs && timestampSec <= this.windowTs + 300) {
       const secondIndex = timestampSec - this.windowTs;
       this.secondPriceMap.set(secondIndex, price);
@@ -39,10 +110,6 @@ export class TwapEngine {
     }
   }
 
-  /**
-   * Calculates real-time running settlement statistics for the active round.
-   * Fully protected against period transition division-by-zero or NaN.
-   */
   public computeRoundSettlement(currentPrice: number, nowSec: number): RoundSettlementState {
     const elapsedRaw = Math.max(0, nowSec - this.windowTs);
     const elapsed = Math.min(300, elapsedRaw);
@@ -51,7 +118,6 @@ export class TwapEngine {
 
     const strike = this.strikePrice > 0 ? this.strikePrice : (currentPrice > 0 ? currentPrice : 1);
 
-    // Calculate TWAP across elapsed seconds
     let runningTwap = currentPrice > 0 ? currentPrice : strike;
     if (this.secondPriceMap.size > 0 && elapsed > 0) {
       let sumPrice = 0;
@@ -74,7 +140,6 @@ export class TwapEngine {
     const twapDelta = runningTwap - strike;
     const twapDeltaPct = strike > 0 ? (twapDelta / strike) * 100 : 0;
 
-    // Required price to flip result before window close
     let requiredPriceToFlip = strike;
     if (secondsLeft > 0 && elapsed > 0) {
       const currentSum = runningTwap * (elapsed + 1);
@@ -147,32 +212,7 @@ export function aggregateCandles(candles: OHLCData[], tf: TimeFrame, maxCount: n
   }
 
   const sorted = Array.from(bucketMap.values()).sort((a, b) => a.time - b.time);
-  return sorted.slice(-maxCount);
-}
-
-/**
- * Merges two candle arrays without duplicate timestamps.
- */
-export function mergeCandleArrays(existing: OHLCData[], incoming: OHLCData[], maxCount: number = 300): OHLCData[] {
-  const map = new Map<number, OHLCData>();
-  for (const c of existing) map.set(c.time, c);
-  for (const c of incoming) {
-    const prev = map.get(c.time);
-    if (!prev) {
-      map.set(c.time, c);
-    } else {
-      map.set(c.time, {
-        time: c.time,
-        open: prev.open,
-        high: Math.max(prev.high, c.high),
-        low: Math.min(prev.low, c.low),
-        close: c.close,
-        volume: Math.max(prev.volume, c.volume),
-      });
-    }
-  }
-
-  return Array.from(map.values()).sort((a, b) => a.time - b.time).slice(-maxCount);
+  return ensureStrictlyAscending(sorted).slice(-maxCount);
 }
 
 /**

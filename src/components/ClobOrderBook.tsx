@@ -21,32 +21,32 @@ export const ClobOrderBook: React.FC<ClobOrderBookProps> = ({ orderBook, theme =
   return (
     <div
       className={`border rounded-xl p-2 flex flex-col h-full min-h-0 font-mono text-xs shadow-md select-none transition-colors overflow-hidden ${
-        isDark ? 'bg-[#080b11] border-[#1a2337]' : 'bg-white border-slate-200 text-slate-800'
+        isDark ? 'bg-[#181a20] border-[#2b313a]' : 'bg-white border-[#eaecef] text-slate-800'
       }`}
     >
       {/* Book Header */}
       <div
         className={`flex items-center justify-between pb-1 border-b mb-1 font-bold text-[10px] uppercase tracking-wider flex-shrink-0 ${
-          isDark ? 'border-[#161f33] text-slate-400' : 'border-slate-200 text-slate-500'
+          isDark ? 'border-[#2b313a] text-[#848e9c]' : 'border-slate-200 text-slate-500'
         }`}
       >
         <div className="flex items-center space-x-1">
-          <BookOpen className="w-3 h-3 text-blue-500" />
-          <span className={isDark ? 'text-slate-200' : 'text-slate-800'}>ORDER BOOK (CLOB)</span>
+          <BookOpen className="w-3 h-3 text-[#f0b90b]" />
+          <span className={isDark ? 'text-[#eaecef]' : 'text-slate-800'}>ORDER BOOK (CLOB)</span>
         </div>
-        <span className="text-[9px] text-slate-400 font-normal">POLYGON L2</span>
+        <span className="text-[9px] text-[#848e9c] font-normal">POLYGON L2</span>
       </div>
 
-      <div className="grid grid-cols-3 pb-0.5 text-[9px] font-bold text-slate-400 uppercase flex-shrink-0">
+      <div className="grid grid-cols-3 pb-0.5 text-[9px] font-bold text-[#848e9c] uppercase flex-shrink-0">
         <span>HARGA</span>
         <span className="text-right">JUMLAH</span>
         <span className="text-right">TOTAL</span>
       </div>
 
-      {/* Asks (Sell Orders) */}
+      {/* Asks (Sell Orders - Binance Red) */}
       <div className="flex flex-col space-y-0.5 overflow-hidden flex-1 min-h-0 justify-end">
         {displayAsks.length === 0 ? (
-          <div className="text-center text-slate-400 py-2 text-[10px]">Memuat antrean jual...</div>
+          <div className="text-center text-[#848e9c] py-2 text-[10px]">Memuat antrean jual...</div>
         ) : (
           displayAsks.map((ask, idx) => {
             const depthPct = Math.min(100, Math.max(5, (ask.size / maxSize) * 100));
@@ -54,20 +54,20 @@ export const ClobOrderBook: React.FC<ClobOrderBookProps> = ({ orderBook, theme =
               <div
                 key={`ask-${idx}`}
                 className={`relative grid grid-cols-3 py-0.5 px-1 rounded cursor-pointer transition-colors text-[10px] ${
-                  isDark ? 'hover:bg-rose-950/30' : 'hover:bg-rose-50'
+                  isDark ? 'hover:bg-[#2b181e]' : 'hover:bg-rose-50'
                 }`}
               >
                 <div
-                  className="absolute right-0 top-0 bottom-0 bg-rose-500/15 rounded-r pointer-events-none"
+                  className="absolute right-0 top-0 bottom-0 bg-[#f6465d]/15 rounded-r pointer-events-none"
                   style={{ width: `${depthPct}%` }}
                 />
-                <span className="relative z-10 text-rose-500 font-black">
+                <span className="relative z-10 text-[#f6465d] font-black">
                   ${ask.price.toFixed(3)}
                 </span>
-                <span className={`relative z-10 font-medium text-right ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                <span className={`relative z-10 font-medium text-right ${isDark ? 'text-[#eaecef]' : 'text-slate-700'}`}>
                   {ask.size.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                 </span>
-                <span className="relative z-10 text-slate-400 text-right">
+                <span className="relative z-10 text-[#848e9c] text-right">
                   ${(ask.price * ask.size).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                 </span>
               </div>
@@ -79,24 +79,24 @@ export const ClobOrderBook: React.FC<ClobOrderBookProps> = ({ orderBook, theme =
       {/* Mid Price & Spread Bar */}
       <div
         className={`my-1 py-1 px-2 border rounded-lg flex items-center justify-between shadow-inner flex-shrink-0 ${
-          isDark ? 'bg-[#0e1422] border-[#1e2a44]' : 'bg-slate-100 border-slate-200'
+          isDark ? 'bg-[#1e2329] border-[#2b313a]' : 'bg-slate-100 border-slate-200'
         }`}
       >
         <div className="flex items-center space-x-1.5">
-          <span className="text-slate-400 text-[9px] font-bold">MID:</span>
+          <span className="text-[#848e9c] text-[9px] font-bold">MID:</span>
           <span className={`font-black text-xs sm:text-sm ${isDark ? 'text-white' : 'text-slate-900'}`}>
             ${lastPrice.toFixed(3)}
           </span>
         </div>
-        <div className="text-[9px] text-slate-500 font-bold">
-          SPREAD: <span className="text-amber-500 font-black">${spread.toFixed(3)}</span>
+        <div className="text-[9px] text-[#848e9c] font-bold">
+          SPREAD: <span className="text-[#f0b90b] font-black">${spread.toFixed(3)}</span>
         </div>
       </div>
 
-      {/* Bids (Buy Orders) */}
+      {/* Bids (Buy Orders - Binance Green) */}
       <div className="flex flex-col space-y-0.5 overflow-hidden flex-1 min-h-0">
         {displayBids.length === 0 ? (
-          <div className="text-center text-slate-400 py-2 text-[10px]">Memuat antrean beli...</div>
+          <div className="text-center text-[#848e9c] py-2 text-[10px]">Memuat antrean beli...</div>
         ) : (
           displayBids.map((bid, idx) => {
             const depthPct = Math.min(100, Math.max(5, (bid.size / maxSize) * 100));
@@ -104,20 +104,20 @@ export const ClobOrderBook: React.FC<ClobOrderBookProps> = ({ orderBook, theme =
               <div
                 key={`bid-${idx}`}
                 className={`relative grid grid-cols-3 py-0.5 px-1 rounded cursor-pointer transition-colors text-[10px] ${
-                  isDark ? 'hover:bg-emerald-950/30' : 'hover:bg-emerald-50'
+                  isDark ? 'hover:bg-[#152922]' : 'hover:bg-emerald-50'
                 }`}
               >
                 <div
-                  className="absolute right-0 top-0 bottom-0 bg-emerald-500/15 rounded-r pointer-events-none"
+                  className="absolute right-0 top-0 bottom-0 bg-[#0ecb81]/15 rounded-r pointer-events-none"
                   style={{ width: `${depthPct}%` }}
                 />
-                <span className="relative z-10 text-emerald-500 font-black">
+                <span className="relative z-10 text-[#0ecb81] font-black">
                   ${bid.price.toFixed(3)}
                 </span>
-                <span className={`relative z-10 font-medium text-right ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                <span className={`relative z-10 font-medium text-right ${isDark ? 'text-[#eaecef]' : 'text-slate-700'}`}>
                   {bid.size.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                 </span>
-                <span className="relative z-10 text-slate-400 text-right">
+                <span className="relative z-10 text-[#848e9c] text-right">
                   ${(bid.price * bid.size).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                 </span>
               </div>

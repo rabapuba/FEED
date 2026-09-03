@@ -41,41 +41,40 @@ export const ProHeader: React.FC<ProHeaderProps> = ({
   const timeWindowStr = settlement.currentWindowTs > 0 ? formatWindowTimeRange(settlement.currentWindowTs) : '5M';
   const isDark = theme === 'dark';
 
-  const ASSETS: Array<{ id: CryptoAsset; label: string; icon: string }> = [
-    { id: 'BTC', label: 'BTC 5M', icon: '₿' },
-    { id: 'ETH', label: 'ETH 5M', icon: 'Ξ' },
-    { id: 'SOL', label: 'SOL 5M', icon: '◎' },
+  const ASSETS: Array<{ id: CryptoAsset; label: string }> = [
+    { id: 'BTC', label: 'BTC/USDT 5M' },
+    { id: 'ETH', label: 'ETH/USDT 5M' },
+    { id: 'SOL', label: 'SOL/USDT 5M' },
   ];
 
   return (
     <header
       className={`border-b px-2.5 sm:px-4 py-1.5 sticky top-0 z-30 shadow-md backdrop-blur select-none transition-colors flex-shrink-0 ${
-        isDark ? 'bg-[#0a0d15] border-[#1a2337]' : 'bg-white border-slate-200 text-slate-800'
+        isDark ? 'bg-[#181a20] border-[#2b313a]' : 'bg-white border-[#eaecef] text-slate-800'
       }`}
     >
       <div className="max-w-[1920px] mx-auto flex flex-col md:flex-row items-center justify-between gap-2">
         
-        {/* LEFT SECTION: Asset Switcher & Live Spot Ticker */}
+        {/* LEFT SECTION: Asset Switcher & Live Spot Ticker (Binance Pro Style) */}
         <div className="flex items-center justify-between w-full md:w-auto space-x-3">
           {/* Asset Switcher */}
           <div
             className={`flex items-center p-0.5 rounded-lg border ${
-              isDark ? 'bg-[#101624] border-[#1e293b]' : 'bg-slate-100 border-slate-300'
+              isDark ? 'bg-[#1e2329] border-[#2b313a]' : 'bg-slate-100 border-slate-300'
             }`}
           >
             {ASSETS.map((item) => (
               <button
                 key={item.id}
                 onClick={() => setAsset(item.id)}
-                className={`flex items-center space-x-1 px-2.5 py-1 rounded text-xs font-mono font-extrabold transition-all ${
+                className={`flex items-center space-x-1 px-2.5 py-1 rounded text-xs font-mono font-black transition-all ${
                   asset === item.id
-                    ? 'bg-blue-600 text-white shadow-sm'
+                    ? 'bg-[#f0b90b] text-slate-950 shadow-sm font-black'
                     : isDark
-                    ? 'text-slate-400 hover:text-slate-200'
+                    ? 'text-[#848e9c] hover:text-[#eaecef]'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                <span className="text-xs font-black">{item.icon}</span>
                 <span>{item.label}</span>
               </button>
             ))}
@@ -84,16 +83,16 @@ export const ProHeader: React.FC<ProHeaderProps> = ({
           {/* Live Price Flash Card */}
           <div className="flex items-center space-x-2 font-mono">
             <div>
-              <div className="text-[9px] text-slate-500 uppercase tracking-wider font-semibold">
+              <div className="text-[9px] text-[#848e9c] uppercase tracking-wider font-bold">
                 BINANCE SPOT
               </div>
               <div className="flex items-center space-x-1">
                 <span
                   className={`text-base sm:text-lg font-black transition-colors ${
                     priceDirection === 'up'
-                      ? 'text-emerald-500'
+                      ? 'text-[#0ecb81]'
                       : priceDirection === 'down'
-                      ? 'text-rose-500'
+                      ? 'text-[#f6465d]'
                       : isDark
                       ? 'text-white'
                       : 'text-slate-900'
@@ -101,16 +100,16 @@ export const ProHeader: React.FC<ProHeaderProps> = ({
                 >
                   ${spotPrice > 0 ? spotPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '---.--'}
                 </span>
-                {priceDirection === 'up' && <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />}
-                {priceDirection === 'down' && <TrendingDown className="w-3.5 h-3.5 text-rose-500" />}
+                {priceDirection === 'up' && <TrendingUp className="w-3.5 h-3.5 text-[#0ecb81]" />}
+                {priceDirection === 'down' && <TrendingDown className="w-3.5 h-3.5 text-[#f6465d]" />}
               </div>
             </div>
 
             {/* Quick Strike Delta */}
             {strikePrice > 0 && (
-              <div className="hidden sm:flex flex-col text-right pl-2.5 border-l border-slate-300 dark:border-slate-800">
-                <span className="text-[9px] text-slate-500 font-semibold">VS STRIKE</span>
-                <span className={`text-xs font-black ${isUpWinning ? 'text-emerald-500' : 'text-rose-500'}`}>
+              <div className="hidden sm:flex flex-col text-right pl-2.5 border-l border-slate-300 dark:border-[#2b313a]">
+                <span className="text-[9px] text-[#848e9c] font-bold">VS STRIKE</span>
+                <span className={`text-xs font-black ${isUpWinning ? 'text-[#0ecb81]' : 'text-[#f6465d]'}`}>
                   {settlement.strikeDelta >= 0 ? '+' : ''}${settlement.strikeDelta.toFixed(2)}
                 </span>
               </div>
@@ -123,29 +122,29 @@ export const ProHeader: React.FC<ProHeaderProps> = ({
           <div
             className={`w-full md:w-auto px-4 sm:px-5 py-1 rounded-xl border transition-all flex items-center justify-between md:justify-center space-x-4 relative overflow-hidden shadow-sm ${
               isCritical
-                ? 'bg-rose-950/80 border-rose-500 glow-urgent text-rose-200'
+                ? 'bg-[#3d0a15] border-[#ff2a5f] text-rose-200'
                 : isUrgent
-                ? 'bg-amber-950/70 border-amber-500 text-amber-200 shadow-amber-500/10'
+                ? 'bg-[#382705] border-[#f0b90b] text-amber-200'
                 : isDark
-                ? 'bg-[#101624] border-[#1e293b] text-slate-200'
+                ? 'bg-[#1e2329] border-[#2b313a] text-slate-200'
                 : 'bg-slate-100 border-slate-300 text-slate-800'
             }`}
           >
             {/* Progress Background Tint */}
             <div
-              className={`absolute left-0 top-0 bottom-0 opacity-15 transition-all duration-1000 ${
-                isCritical ? 'bg-rose-500' : isUrgent ? 'bg-amber-400' : 'bg-blue-500'
+              className={`absolute left-0 top-0 bottom-0 opacity-20 transition-all duration-1000 ${
+                isCritical ? 'bg-[#ff2a5f]' : isUrgent ? 'bg-[#f0b90b]' : 'bg-[#0ecb81]'
               }`}
               style={{ width: `${progressPct}%` }}
             />
 
             {/* Round info */}
             <div className="flex flex-col text-left relative z-10 font-mono">
-              <div className="flex items-center space-x-1 text-[10px] font-bold text-slate-400">
-                <Clock className={`w-3 h-3 ${isUrgent ? 'text-rose-400 animate-spin' : 'text-cyan-500'}`} />
+              <div className="flex items-center space-x-1 text-[10px] font-bold text-[#848e9c]">
+                <Clock className={`w-3 h-3 ${isUrgent ? 'text-[#ff2a5f] animate-spin' : 'text-[#f0b90b]'}`} />
                 <span>COUNTDOWN</span>
               </div>
-              <span className="text-[9px] text-slate-500 font-medium">{timeWindowStr}</span>
+              <span className="text-[9px] text-[#848e9c] font-bold">{timeWindowStr}</span>
             </div>
 
             {/* Digital Giant Countdown */}
@@ -153,10 +152,10 @@ export const ProHeader: React.FC<ProHeaderProps> = ({
               <span
                 className={
                   isCritical
-                    ? 'text-rose-400 drop-shadow-[0_0_10px_rgba(244,63,94,0.7)]'
+                    ? 'text-[#ff2a5f]'
                     : isUrgent
-                    ? 'text-amber-400'
-                    : 'text-cyan-500'
+                    ? 'text-[#f0b90b]'
+                    : 'text-[#f0b90b]'
                 }
               >
                 {formattedCountdown}
@@ -168,13 +167,13 @@ export const ProHeader: React.FC<ProHeaderProps> = ({
               <span
                 className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border ${
                   isUpWinning
-                    ? 'bg-emerald-500/20 text-emerald-500 border-emerald-500/40'
-                    : 'bg-rose-500/20 text-rose-500 border-rose-500/40'
+                    ? 'bg-[#0ecb81]/20 text-[#0ecb81] border-[#0ecb81]/40'
+                    : 'bg-[#f6465d]/20 text-[#f6465d] border-[#f6465d]/40'
                 }`}
               >
                 {isUpWinning ? '▲ UP WIN' : '▼ DOWN WIN'}
               </span>
-              <span className="text-[8px] text-slate-500 mt-0.5 font-bold">
+              <span className="text-[8px] text-[#848e9c] mt-0.5 font-bold">
                 TWAP: ${runningTwap > 0 ? runningTwap.toFixed(2) : '---'}
               </span>
             </div>
@@ -187,27 +186,27 @@ export const ProHeader: React.FC<ProHeaderProps> = ({
           {/* Quick Odds Badge */}
           <div
             className={`hidden xl:flex items-center space-x-2 px-2.5 py-1 rounded-lg border ${
-              isDark ? 'bg-[#101624] border-[#1e293b]' : 'bg-slate-100 border-slate-300'
+              isDark ? 'bg-[#1e2329] border-[#2b313a]' : 'bg-slate-100 border-slate-300'
             }`}
           >
-            <span className="text-emerald-500 font-black">UP {(upPrice * 100).toFixed(0)}¢</span>
-            <span className="text-slate-400">/</span>
-            <span className="text-rose-500 font-black">DOWN {(downPrice * 100).toFixed(0)}¢</span>
+            <span className="text-[#0ecb81] font-black">UP {(upPrice * 100).toFixed(0)}¢</span>
+            <span className="text-[#848e9c]">/</span>
+            <span className="text-[#f6465d] font-black">DOWN {(downPrice * 100).toFixed(0)}¢</span>
           </div>
 
           {/* Proyeksi 30s Header Button */}
           <button
             onClick={() => setShowPrediction(!showPrediction)}
-            className={`flex items-center space-x-1 px-2 py-1 rounded-lg text-xs font-mono font-black border transition-all ${
+            className={`flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-mono font-black border transition-all ${
               showPrediction
-                ? 'bg-yellow-500/20 text-yellow-500 border-yellow-500/60 shadow-sm'
+                ? 'bg-[#f0b90b]/20 text-[#f0b90b] border-[#f0b90b]/60 shadow-sm'
                 : isDark
-                ? 'bg-[#101624] border-[#1e293b] text-slate-500 hover:text-slate-300'
+                ? 'bg-[#1e2329] border-[#2b313a] text-[#848e9c] hover:text-[#eaecef]'
                 : 'bg-slate-100 border-slate-300 text-slate-500 hover:text-slate-800'
             }`}
             title="Garis Proyeksi 30-Detik (Warna Kuning)"
           >
-            <Zap className={`w-3 h-3 ${showPrediction ? 'text-yellow-400 animate-pulse' : ''}`} />
+            <Zap className={`w-3 h-3 ${showPrediction ? 'text-[#f0b90b] animate-pulse' : ''}`} />
             <span>PROYEKSI: {showPrediction ? 'ON' : 'OFF'}</span>
           </button>
 
@@ -216,27 +215,27 @@ export const ProHeader: React.FC<ProHeaderProps> = ({
             onClick={toggleTheme}
             className={`flex items-center space-x-1 px-2 py-1 rounded-lg text-xs font-mono font-bold border transition-colors ${
               isDark
-                ? 'bg-[#101624] border-[#1e293b] text-slate-300 hover:text-white'
+                ? 'bg-[#1e2329] border-[#2b313a] text-slate-300 hover:text-white'
                 : 'bg-slate-100 border-slate-300 text-slate-700 hover:text-black'
             }`}
             title={isDark ? 'Beralih ke Mode Terang (Light)' : 'Beralih ke Mode Gelap (Dark)'}
           >
-            {isDark ? <Sun className="w-3 h-3 text-amber-400" /> : <Moon className="w-3 h-3 text-blue-600" />}
-            <span className="font-extrabold">{isDark ? 'LIGHT' : 'DARK'}</span>
+            {isDark ? <Sun className="w-3 h-3 text-[#f0b90b]" /> : <Moon className="w-3 h-3 text-blue-600" />}
+            <span className="font-black">{isDark ? 'LIGHT' : 'DARK'}</span>
           </button>
 
           {/* Latency Ping Badge */}
           <div
             className={`flex items-center space-x-1 px-2 py-1 rounded-lg border ${
-              isDark ? 'bg-[#101624] border-[#1e293b]' : 'bg-slate-100 border-slate-300'
+              isDark ? 'bg-[#1e2329] border-[#2b313a]' : 'bg-slate-100 border-slate-300'
             }`}
           >
-            <span className="text-[10px] font-bold text-slate-500">
+            <span className="text-[10px] font-bold text-[#848e9c]">
               {latencyStats.binanceWsPingMs > 0 ? `${latencyStats.binanceWsPingMs}ms` : '<20ms'}
             </span>
             <span
               className={`w-2 h-2 rounded-full ${
-                latencyStats.binanceWsConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+                latencyStats.binanceWsConnected ? 'bg-[#0ecb81] animate-pulse' : 'bg-[#f0b90b]'
               }`}
             />
           </div>

@@ -34,6 +34,8 @@ import {
 import {
   TwapEngine,
   aggregateCandles,
+  resampleContractCandles,
+  ensureStrictlyAscending,
   toHeikinAshi,
 } from '../services/twapEngine';
 
@@ -176,7 +178,7 @@ export function useTradingTerminal() {
   // RAF Throttling for UI
   const rafPendingRef = useRef<boolean>(false);
 
-  // Helper to re-emit active candles to state
+  // Helper to re-emit active candles to state safely
   const emitCandles = useCallback(() => {
     const isSpot = chartModeRef.current === 'SPOT';
     const source = isSpot ? spotActiveCandlesRef.current : contractActiveCandlesRef.current;
@@ -185,10 +187,11 @@ export function useTradingTerminal() {
       return;
     }
 
+    const clean = ensureStrictlyAscending(source);
     if (chartStyleRef.current === 'heikin-ashi') {
-      setActiveCandles(toHeikinAshi(source));
+      setActiveCandles(toHeikinAshi(clean));
     } else {
-      setActiveCandles([...source]);
+      setActiveCandles([...clean]);
     }
   }, []);
 
@@ -264,9 +267,9 @@ export function useTradingTerminal() {
       if (existing.length > 0) {
         const lastRawTime = raw[raw.length - 1].time;
         const newerLive = existing.filter((c) => c.time > lastRawTime);
-        spotActiveCandlesRef.current = [...raw, ...newerLive].slice(-250);
+        spotActiveCandlesRef.current = ensureStrictlyAscending([...raw, ...newerLive]).slice(-250);
       } else {
-        spotActiveCandlesRef.current = raw;
+        spotActiveCandlesRef.current = ensureStrictlyAscending(raw);
       }
 
       const lastCandle = spotActiveCandlesRef.current[spotActiveCandlesRef.current.length - 1];
@@ -291,7 +294,18 @@ export function useTradingTerminal() {
     };
   }, [asset, timeframe, emitCandles]);
 
-  // 3. Binance Live WebSocket Tick Pipeline (Continuous Live Appends)
+  // 3. Re-aggregate KONTRAK candles on Timeframe or Asset change (Fixes KONTRAK timeframe switching error!)
+  useEffect(() => {
+    const base = contractBaseCandlesRef.current;
+    if (base.length > 0) {
+      contractActiveCandlesRef.current = resampleContractCandles(base, timeframe, 250);
+      if (chartMode === 'CONTRACT') {
+        emitCandles();
+      }
+    }
+  }, [timeframe, chartMode, emitCandles]);
+
+  // 4. Binance Live WebSocket Tick Pipeline (Continuous Live Appends)
   useEffect(() => {
     binanceManagerRef.current?.destroy();
 
@@ -382,7 +396,7 @@ export function useTradingTerminal() {
     };
   }, [asset, emitCandles]);
 
-  // 4. Contract Candle Tick Processor
+  // 5. Contract Candle Tick Processor
   const processContractTick = useCallback((price: number, size: number, timestampSec: number) => {
     if (price <= 0 || price >= 1) return;
 
@@ -408,21 +422,39 @@ export function useTradingTerminal() {
       arr.push({ time: bucketTime, open: price, high: price, low: price, close: price, volume: size });
     }
 
-    saveCachedContractCandles(assetRef.current, arr);
+    // Also update base buffer (1m)
+    const base1mTime = Math.floor(timestampSec / 60) * 60;
+    const baseArr = contractBaseCandlesRef.current;
+    if (baseArr.length > 0) {
+      const lastBase = baseArr[baseArr.length - 1];
+      if (lastBase.time === base1mTime) {
+        lastBase.high = Math.max(lastBase.high, price);
+        lastBase.low = Math.min(lastBase.low, price);
+        lastBase.close = price;
+        lastBase.volume += size;
+      } else if (base1mTime > lastBase.time) {
+        baseArr.push({ time: base1mTime, open: price, high: price, low: price, close: price, volume: size });
+        if (baseArr.length > 300) baseArr.shift();
+      }
+    } else {
+      baseArr.push({ time: base1mTime, open: price, high: price, low: price, close: price, volume: size });
+    }
+
+    saveCachedContractCandles(assetRef.current, baseArr);
 
     if (chartModeRef.current === 'CONTRACT') {
       emitCandles();
     }
   }, [emitCandles]);
 
-  // 5. Load KONTRAK History & Multi-Window
+  // 6. Load KONTRAK History & Multi-Window
   useEffect(() => {
     let isCancelled = false;
 
     const cached = loadCachedContractCandles(asset);
     if (cached.length > 0) {
-      contractBaseCandlesRef.current = cached;
-      contractActiveCandlesRef.current = aggregateCandles(cached, timeframe, 200);
+      contractBaseCandlesRef.current = ensureStrictlyAscending(cached);
+      contractActiveCandlesRef.current = resampleContractCandles(cached, timeframe, 250);
       if (chartMode === 'CONTRACT') {
         emitCandles();
       }
@@ -433,9 +465,9 @@ export function useTradingTerminal() {
         const multi = await fetchMultiWindowContractHistory(asset, currentWindowTs, 12);
         if (!isCancelled && multi.length > 0) {
           const merged = mergeCandles(contractBaseCandlesRef.current, multi, 300);
-          contractBaseCandlesRef.current = merged;
-          saveCachedContractCandles(asset, merged);
-          contractActiveCandlesRef.current = aggregateCandles(merged, timeframe, 200);
+          contractBaseCandlesRef.current = ensureStrictlyAscending(merged);
+          saveCachedContractCandles(asset, contractBaseCandlesRef.current);
+          contractActiveCandlesRef.current = resampleContractCandles(contractBaseCandlesRef.current, timeframe, 250);
 
           if (chartMode === 'CONTRACT') {
             emitCandles();
@@ -449,9 +481,9 @@ export function useTradingTerminal() {
     return () => {
       isCancelled = true;
     };
-  }, [asset, currentWindowTs, timeframe, chartMode, emitCandles]);
+  }, [asset, currentWindowTs, chartMode, emitCandles]);
 
-  // 6. Polymarket Event & CLOB OrderBook with Auto-Retry and Rollover Resilience
+  // 7. Polymarket Event & CLOB OrderBook with Auto-Retry and Rollover Resilience
   useEffect(() => {
     let isCancelled = false;
 
@@ -562,7 +594,6 @@ export function useTradingTerminal() {
 
     // Continuous Polling Interval with Seamless New Window Discovery
     const pollInterval = setInterval(async () => {
-      // Check if the actual currentWindow has become available on Polymarket
       const targetSlug = getPolymarketSlug(asset, currentWindowTs);
       if (activeEvent?.slug !== targetSlug) {
         const newEvt = await fetchEventBySlug(targetSlug);
